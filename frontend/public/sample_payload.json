@@ -1,0 +1,417 @@
+{
+    "nodes": [
+        {
+            "id": "vpc-prod",
+            "type": "aws_vpc",
+            "label": "Production VPC",
+            "parent_id": null,
+            "metrics": {
+                "current_load": 0.0
+            },
+            "history": [
+                {
+                    "timestamp": "2026-03-12T14:00:00Z",
+                    "status": "success",
+                    "message": "VPC peering route propagation completed."
+                }
+            ]
+        },
+        {
+            "id": "subnet-pub-1",
+            "type": "aws_subnet",
+            "label": "Public Subnet (us-east-1a)",
+            "parent_id": "vpc-prod",
+            "metrics": {
+                "current_load": 0.0
+            },
+            "history": []
+        },
+        {
+            "id": "subnet-priv-1",
+            "type": "aws_subnet",
+            "label": "Private Subnet (us-east-1b)",
+            "parent_id": "vpc-prod",
+            "metrics": {
+                "current_load": 0.0
+            },
+            "history": []
+        },
+        {
+            "id": "cf-dist-1",
+            "type": "aws_cloudfront",
+            "label": "CloudFront CDN",
+            "parent_id": null,
+            "metrics": {
+                "current_load": 0.31
+            },
+            "history": [
+                {
+                    "timestamp": "2026-03-13T08:00:00Z",
+                    "status": "success",
+                    "message": "Cache invalidation completed — 12,400 objects cleared."
+                }
+            ]
+        },
+        {
+            "id": "route53-1",
+            "type": "aws_route53",
+            "label": "Route53 DNS",
+            "parent_id": null,
+            "metrics": {
+                "current_load": 0.05
+            },
+            "history": [
+                {
+                    "timestamp": "2026-03-12T20:00:00Z",
+                    "status": "success",
+                    "message": "DNS failover health check passed — 99.99% uptime."
+                }
+            ]
+        },
+        {
+            "id": "waf-1",
+            "type": "aws_waf",
+            "label": "WAF (Web Firewall)",
+            "parent_id": null,
+            "metrics": {
+                "current_load": 0.18
+            },
+            "history": [
+                {
+                    "timestamp": "2026-03-13T06:30:00Z",
+                    "status": "success",
+                    "message": "Rate limiting rule deployed — 10k req/min threshold."
+                },
+                {
+                    "timestamp": "2026-03-13T11:15:00Z",
+                    "status": "failure",
+                    "message": "Blocked 2,400 SQL injection attempts from 185.x.x.x."
+                }
+            ]
+        },
+        {
+            "id": "alb-prod",
+            "type": "aws_alb",
+            "label": "Application Load Balancer",
+            "parent_id": "subnet-pub-1",
+            "metrics": {
+                "current_load": 0.65
+            },
+            "history": [
+                {
+                    "timestamp": "2026-03-13T10:00:00Z",
+                    "status": "success",
+                    "message": "Target group health check — 3/3 targets healthy."
+                }
+            ]
+        },
+        {
+            "id": "ec2-web-1",
+            "type": "aws_instance",
+            "label": "Web Server (Nginx)",
+            "parent_id": "subnet-pub-1",
+            "metrics": {
+                "current_load": 0.72
+            },
+            "history": [
+                {
+                    "timestamp": "2026-03-13T09:15:00Z",
+                    "status": "success",
+                    "message": "Deployed v2.4.1 — nginx config reload."
+                },
+                {
+                    "timestamp": "2026-03-13T11:45:00Z",
+                    "status": "failure",
+                    "message": "Health-check timeout after TLS cert rotation."
+                },
+                {
+                    "timestamp": "2026-03-13T12:02:00Z",
+                    "status": "success",
+                    "message": "Rollback to v2.4.0 — service restored."
+                }
+            ]
+        },
+        {
+            "id": "ec2-web-2",
+            "type": "aws_instance",
+            "label": "Web Server 2 (Nginx)",
+            "parent_id": "subnet-pub-1",
+            "metrics": {
+                "current_load": 0.44
+            },
+            "history": [
+                {
+                    "timestamp": "2026-03-13T09:20:00Z",
+                    "status": "success",
+                    "message": "Deployed v2.4.1 — rolling update complete."
+                }
+            ]
+        },
+        {
+            "id": "ec2-app-1",
+            "type": "aws_instance",
+            "label": "App Server (FastAPI)",
+            "parent_id": "subnet-priv-1",
+            "metrics": {
+                "current_load": 0.45
+            },
+            "history": [
+                {
+                    "timestamp": "2026-03-13T10:30:00Z",
+                    "status": "success",
+                    "message": "Blue/green swap to v3.1.0 complete."
+                }
+            ]
+        },
+        {
+            "id": "lambda-auth",
+            "type": "aws_lambda",
+            "label": "Auth Lambda (JWT)",
+            "parent_id": "subnet-priv-1",
+            "metrics": {
+                "current_load": 0.22
+            },
+            "history": [
+                {
+                    "timestamp": "2026-03-13T07:00:00Z",
+                    "status": "success",
+                    "message": "Cold start optimization — P99 latency down to 120ms."
+                }
+            ]
+        },
+        {
+            "id": "rds-primary",
+            "type": "aws_db_instance",
+            "label": "Primary PostgreSQL (RDS)",
+            "parent_id": "subnet-priv-1",
+            "metrics": {
+                "current_load": 0.58
+            },
+            "history": [
+                {
+                    "timestamp": "2026-03-12T22:00:00Z",
+                    "status": "in_progress",
+                    "message": "Automated snapshot & vacuum running."
+                },
+                {
+                    "timestamp": "2026-03-12T22:47:00Z",
+                    "status": "success",
+                    "message": "Snapshot rds-prod-20260312 completed."
+                }
+            ]
+        },
+        {
+            "id": "elasticache-1",
+            "type": "aws_elasticache",
+            "label": "ElastiCache (Redis)",
+            "parent_id": "subnet-priv-1",
+            "metrics": {
+                "current_load": 0.35
+            },
+            "history": [
+                {
+                    "timestamp": "2026-03-13T04:00:00Z",
+                    "status": "success",
+                    "message": "Cache hit ratio at 94.2% — evictions stable."
+                }
+            ]
+        },
+        {
+            "id": "s3-assets",
+            "type": "aws_s3",
+            "label": "S3 Assets Bucket",
+            "parent_id": null,
+            "metrics": {
+                "current_load": 0.12
+            },
+            "history": [
+                {
+                    "timestamp": "2026-03-13T02:00:00Z",
+                    "status": "success",
+                    "message": "Lifecycle policy moved 14GB to Glacier."
+                }
+            ]
+        },
+        {
+            "id": "gh-actions",
+            "type": "cicd_github_actions",
+            "label": "GitHub Actions",
+            "parent_id": null,
+            "metrics": {
+                "current_load": 0.40
+            },
+            "history": [
+                {
+                    "timestamp": "2026-03-13T09:10:00Z",
+                    "status": "success",
+                    "message": "CI pipeline #4821 passed — all 247 tests green."
+                },
+                {
+                    "timestamp": "2026-03-13T11:40:00Z",
+                    "status": "failure",
+                    "message": "CI pipeline #4823 failed — integration test timeout."
+                },
+                {
+                    "timestamp": "2026-03-13T12:00:00Z",
+                    "status": "success",
+                    "message": "CI pipeline #4824 passed — hotfix deployed."
+                }
+            ]
+        },
+        {
+            "id": "cloudwatch-1",
+            "type": "aws_cloudwatch",
+            "label": "CloudWatch Monitoring",
+            "parent_id": null,
+            "metrics": {
+                "current_load": 0.15
+            },
+            "history": [
+                {
+                    "timestamp": "2026-03-13T11:50:00Z",
+                    "status": "failure",
+                    "message": "ALARM: EC2 Web Server CPU > 85% for 5 minutes."
+                },
+                {
+                    "timestamp": "2026-03-13T12:05:00Z",
+                    "status": "success",
+                    "message": "ALARM resolved: CPU back to 72%."
+                }
+            ]
+        },
+        {
+            "id": "pagerduty-1",
+            "type": "sre_pagerduty",
+            "label": "PagerDuty",
+            "parent_id": null,
+            "metrics": {
+                "current_load": 0.08
+            },
+            "history": [
+                {
+                    "timestamp": "2026-03-13T11:51:00Z",
+                    "status": "failure",
+                    "message": "Incident #INC-2847 triggered — P2 Web Server degradation."
+                },
+                {
+                    "timestamp": "2026-03-13T12:06:00Z",
+                    "status": "success",
+                    "message": "Incident #INC-2847 resolved — auto-acknowledged."
+                }
+            ]
+        },
+        {
+            "id": "secrets-mgr",
+            "type": "aws_secrets_manager",
+            "label": "Secrets Manager",
+            "parent_id": null,
+            "metrics": {
+                "current_load": 0.02
+            },
+            "history": [
+                {
+                    "timestamp": "2026-03-12T00:00:00Z",
+                    "status": "success",
+                    "message": "Automatic rotation of RDS credentials completed."
+                }
+            ]
+        }
+    ],
+    "edges": [
+        {
+            "source_id": "route53-1",
+            "target_id": "cf-dist-1",
+            "label": "DNS → CDN"
+        },
+        {
+            "source_id": "cf-dist-1",
+            "target_id": "waf-1",
+            "label": "HTTPS"
+        },
+        {
+            "source_id": "waf-1",
+            "target_id": "alb-prod",
+            "label": "Filtered Traffic"
+        },
+        {
+            "source_id": "cf-dist-1",
+            "target_id": "s3-assets",
+            "label": "Static Assets"
+        },
+        {
+            "source_id": "alb-prod",
+            "target_id": "ec2-web-1",
+            "label": "HTTP / 80"
+        },
+        {
+            "source_id": "alb-prod",
+            "target_id": "ec2-web-2",
+            "label": "HTTP / 80"
+        },
+        {
+            "source_id": "ec2-web-1",
+            "target_id": "ec2-app-1",
+            "label": "HTTPS / 8443"
+        },
+        {
+            "source_id": "ec2-web-2",
+            "target_id": "ec2-app-1",
+            "label": "HTTPS / 8443"
+        },
+        {
+            "source_id": "ec2-app-1",
+            "target_id": "lambda-auth",
+            "label": "Invoke (JWT)"
+        },
+        {
+            "source_id": "ec2-app-1",
+            "target_id": "rds-primary",
+            "label": "TCP / 5432"
+        },
+        {
+            "source_id": "ec2-app-1",
+            "target_id": "elasticache-1",
+            "label": "TCP / 6379"
+        },
+        {
+            "source_id": "ec2-app-1",
+            "target_id": "s3-assets",
+            "label": "S3 API"
+        },
+        {
+            "source_id": "gh-actions",
+            "target_id": "ec2-web-1",
+            "label": "Deploy"
+        },
+        {
+            "source_id": "gh-actions",
+            "target_id": "ec2-app-1",
+            "label": "Deploy"
+        },
+        {
+            "source_id": "cloudwatch-1",
+            "target_id": "ec2-web-1",
+            "label": "Monitor"
+        },
+        {
+            "source_id": "cloudwatch-1",
+            "target_id": "rds-primary",
+            "label": "Monitor"
+        },
+        {
+            "source_id": "cloudwatch-1",
+            "target_id": "pagerduty-1",
+            "label": "Alert"
+        },
+        {
+            "source_id": "secrets-mgr",
+            "target_id": "rds-primary",
+            "label": "Credentials"
+        },
+        {
+            "source_id": "secrets-mgr",
+            "target_id": "lambda-auth",
+            "label": "JWT Secret"
+        }
+    ]
+}

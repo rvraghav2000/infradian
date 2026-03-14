@@ -1,0 +1,115 @@
+{
+    "nodes": [
+        {
+            "id": "vpc-001",
+            "type": "aws_vpc",
+            "label": "Production VPC",
+            "parent_id": null,
+            "metrics": {
+                "current_load": 0.0
+            },
+            "history": [
+                {
+                    "timestamp": "2026-03-12T14:00:00Z",
+                    "status": "success",
+                    "message": "VPC peering route propagation completed."
+                }
+            ]
+        },
+        {
+            "id": "subnet-pub-1",
+            "type": "aws_subnet",
+            "label": "Public Subnet (us-east-1a)",
+            "parent_id": "vpc-001",
+            "metrics": {
+                "current_load": 0.0
+            },
+            "history": []
+        },
+        {
+            "id": "subnet-priv-1",
+            "type": "aws_subnet",
+            "label": "Private Subnet (us-east-1b)",
+            "parent_id": "vpc-001",
+            "metrics": {
+                "current_load": 0.0
+            },
+            "history": []
+        },
+        {
+            "id": "ec2-web-1",
+            "type": "aws_instance",
+            "label": "Web Server (Nginx)",
+            "parent_id": "subnet-pub-1",
+            "metrics": {
+                "current_load": 0.72
+            },
+            "history": [
+                {
+                    "timestamp": "2026-03-13T09:15:00Z",
+                    "status": "success",
+                    "message": "Deployed v2.4.1 — nginx config reload."
+                },
+                {
+                    "timestamp": "2026-03-13T11:45:00Z",
+                    "status": "failure",
+                    "message": "Health-check timeout after TLS cert rotation."
+                },
+                {
+                    "timestamp": "2026-03-13T12:02:00Z",
+                    "status": "success",
+                    "message": "Rollback to v2.4.0 — service restored."
+                }
+            ]
+        },
+        {
+            "id": "ec2-app-1",
+            "type": "aws_instance",
+            "label": "App Server (FastAPI)",
+            "parent_id": "subnet-priv-1",
+            "metrics": {
+                "current_load": 0.45
+            },
+            "history": [
+                {
+                    "timestamp": "2026-03-13T10:30:00Z",
+                    "status": "success",
+                    "message": "Blue/green swap to v3.1.0 complete."
+                }
+            ]
+        },
+        {
+            "id": "rds-001",
+            "type": "aws_db_instance",
+            "label": "Primary PostgreSQL (RDS)",
+            "parent_id": "subnet-priv-1",
+            "metrics": {
+                "current_load": 0.58
+            },
+            "history": [
+                {
+                    "timestamp": "2026-03-12T22:00:00Z",
+                    "status": "in_progress",
+                    "message": "Automated snapshot & vacuum running."
+                },
+                {
+                    "timestamp": "2026-03-12T22:47:00Z",
+                    "status": "success",
+                    "message": "Snapshot rds-prod-20260312 completed."
+                }
+            ]
+        }
+    ],
+    "edges": [
+        {
+            "source_id": "ec2-web-1",
+            "target_id": "ec2-app-1",
+            "label": "HTTPS / 8443"
+        },
+        {
+            "source_id": "ec2-app-1",
+            "target_id": "rds-001",
+            "label": "TCP / 5432"
+        }
+    ]
+}
