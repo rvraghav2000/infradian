@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "infradian"
+version = "0.1.0"
+description = "Executive Control Room for cloud infrastructure — 2.5D isometric visualizer."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110,<1.0",
+    "uvicorn[standard]>=0.29,<1.0",
+    "pydantic>=2.6,<3.0",
+    "typer>=0.12,<1.0",
+]
+
+[project.scripts]
+infradian = "app.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["app*"]

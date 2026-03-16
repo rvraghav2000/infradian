@@ -169,6 +169,7 @@ def parse_tfstate(path: str | Path) -> InfraGraph:
             parent_id=parent,
             metrics=NodeMetrics(current_load=0.0),
             history=[],
+            attributes=attrs,
         )
         nodes.append(node)
 
@@ -232,7 +233,35 @@ def simulate_live_data(graph: InfraGraph) -> InfraGraph:
             )
         )
 
-    return InfraGraph(nodes=enriched_nodes, edges=graph.edges)
+    # ── Simulated functional edges ───────────────────────────────
+    # Terraform `depends_on` mostly captures structural dependencies (EC2 -> Subnet).
+    # To demonstrate Infradian's network flow visualization, we inject simulated
+    # logical dependencies (e.g., Web -> App -> DB) if none exist between leaves.
+    visual_edges = [
+        e for e in graph.edges
+        if not any(t in e.target_id for t in ["vpc", "subnet"])
+        and not any(t in e.source_id for t in ["vpc", "subnet"])
+    ]
+
+    new_edges = list(graph.edges)
+    if not visual_edges:
+        # Group leaves by rough tier
+        webs = [n for n in enriched_nodes if "web" in n.id.lower() or n.type == "aws_cloudfront"]
+        apps = [n for n in enriched_nodes if "app" in n.id.lower() or "lambda" in n.type]
+        dbs = [n for n in enriched_nodes if "db" in n.id.lower() or "cache" in n.id.lower()]
+
+        if webs and apps:
+            for w in webs:
+                new_edges.append(Edge(source_id=w.id, target_id=apps[0].id, label="HTTPS / 8443"))
+        elif webs and dbs:
+            for w in webs:
+                new_edges.append(Edge(source_id=w.id, target_id=dbs[0].id, label="TCP / 5432"))
+        
+        if apps and dbs:
+            for a in apps:
+                new_edges.append(Edge(source_id=a.id, target_id=dbs[0].id, label="TCP / 5432"))
+
+    return InfraGraph(nodes=enriched_nodes, edges=new_edges)
 
 
 # ── CLI entrypoint ───────────────────────────────────────────────────

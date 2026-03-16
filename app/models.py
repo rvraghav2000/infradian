@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Optional
+from typing import Optional, Any
 
 from pydantic import BaseModel, Field
 
@@ -27,6 +27,13 @@ class CICDEventStatus(StrEnum):
     SUCCESS = "success"
     FAILURE = "failure"
     IN_PROGRESS = "in_progress"
+
+
+class NodeStatus(StrEnum):
+    """Lifecycle status of a Node in the infrastructure graph."""
+
+    LIVE = "live"
+    PLANNED = "planned"
 
 
 # ── Sub-models ───────────────────────────────────────────────────────
@@ -81,6 +88,8 @@ class Node(BaseModel):
         Provider-specific resource type (e.g. ``"aws_vpc"``).
     label : str
         Human-friendly display label shown in the visualizer.
+    status : NodeStatus
+        Lifecycle status ('live' or 'planned').
     parent_id : str | None
         Id of the parent node for nested architectures
         (e.g. Subnet → VPC).  ``None`` for top-level resources.
@@ -88,6 +97,8 @@ class Node(BaseModel):
         Current telemetry snapshot.
     history : list[CICDEvent]
         Chronological CI/CD events for Z-axis rendering.
+    attributes : dict[str, Any]
+        Raw configuration attributes extracted from terraform.tfstate.
     """
 
     id: str = Field(
@@ -105,6 +116,10 @@ class Node(BaseModel):
         min_length=1,
         description="Human-readable display label.",
     )
+    status: NodeStatus = Field(
+        default=NodeStatus.LIVE,
+        description="Lifecycle status of this resource.",
+    )
     parent_id: Optional[str] = Field(
         default=None,
         description="Parent node id for nested architectures (None = root).",
@@ -117,7 +132,10 @@ class Node(BaseModel):
         default_factory=list,
         description="CI/CD events for Z-axis timeline rendering.",
     )
-
+    attributes: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Raw configuration attributes extracted from terraform.",
+    )
 
 class Edge(BaseModel):
     """A directed dependency between two Nodes.

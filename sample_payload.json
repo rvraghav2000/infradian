@@ -42,7 +42,7 @@
             "label": "Web Server (Nginx)",
             "parent_id": "subnet-pub-1",
             "metrics": {
-                "current_load": 0.72
+                "current_load": 0.88
             },
             "history": [
                 {

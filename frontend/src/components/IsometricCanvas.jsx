@@ -20,7 +20,7 @@ const ZOOM_MAX = 2.5;
 const ZOOM_STEP = 0.04;      // per scroll tick when Cmd held
 const ZOOM_FRICTION = 0.85;
 
-export default function InfraCanvas({ children, canvasSize, panOffset, onPan }) {
+export default function InfraCanvas({ children, canvasSize, panOffset, onPan, theme = 'light' }) {
     const viewportRef = useRef(null);
     const surfaceRef = useRef(null);
 
@@ -271,18 +271,19 @@ export default function InfraCanvas({ children, canvasSize, panOffset, onPan }) 
     const viewportW = typeof window !== 'undefined' ? window.innerWidth : 1440;
     const viewportH = typeof window !== 'undefined' ? window.innerHeight : 720;
     const zoomPct = Math.round(zoomRef.current * 100);
+    const isDark = theme === 'dark';
 
     return (
         <>
             {/* HUD */}
-            <div className="fixed top-7 left-9 z-50 select-none">
-                <h1 className="text-[22px] font-semibold" style={{ color: '#1d1d1f', letterSpacing: '-0.02em' }}>
+            <div className="fixed top-7 left-9 z-50 select-none pointer-events-none">
+                <h1 className="text-[22px] font-semibold" style={{ color: isDark ? '#fff' : '#1d1d1f', letterSpacing: '-0.02em' }}>
                     Infradian
                 </h1>
-                <p className="text-[11px] mt-0.5" style={{ color: '#86868b', fontWeight: 500 }}>
+                <p className="text-[11px] mt-0.5" style={{ color: isDark ? '#aeaeb2' : '#86868b', fontWeight: 500 }}>
                     Infrastructure Map
                 </p>
-                <p className="text-[10px] mt-1" style={{ color: '#aeaeb2' }}>
+                <p className="text-[10px] mt-1" style={{ color: isDark ? '#636366' : '#aeaeb2' }}>
                     ⌘K Search · Scroll to pan · Pinch or ⌘+scroll to zoom · +/−/0 keys
                 </p>
             </div>
@@ -291,27 +292,27 @@ export default function InfraCanvas({ children, canvasSize, panOffset, onPan }) 
             <div className="fixed top-7 right-9 z-50 select-none">
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg"
                     style={{
-                        background: 'rgba(255,255,255,0.85)',
-                        border: '1px solid rgba(0,0,0,0.06)',
+                        background: isDark ? 'rgba(30,30,32,0.85)' : 'rgba(255,255,255,0.85)',
+                        border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
                         backdropFilter: 'blur(12px)',
-                        boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+                        boxShadow: isDark ? '0 4px 12px rgba(0,0,0,0.4)' : '0 1px 4px rgba(0,0,0,0.04)',
                     }}
                 >
                     <button
                         onClick={() => { targetZoom.current = clamp(targetZoom.current - 0.2, ZOOM_MIN, ZOOM_MAX); startLoop(); }}
                         className="text-[13px] w-6 h-6 rounded flex items-center justify-center cursor-pointer bg-transparent border-0"
-                        style={{ color: '#86868b' }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
+                        style={{ color: isDark ? '#aeaeb2' : '#86868b' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.04)'; }}
                         onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                     >−</button>
-                    <span className="text-[11px] font-medium w-10 text-center" style={{ color: '#1d1d1f' }}>
+                    <span className="text-[11px] font-medium w-10 text-center" style={{ color: isDark ? '#fff' : '#1d1d1f' }}>
                         {zoomPct}%
                     </span>
                     <button
                         onClick={() => { targetZoom.current = clamp(targetZoom.current + 0.2, ZOOM_MIN, ZOOM_MAX); startLoop(); }}
                         className="text-[13px] w-6 h-6 rounded flex items-center justify-center cursor-pointer bg-transparent border-0"
-                        style={{ color: '#86868b' }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
+                        style={{ color: isDark ? '#aeaeb2' : '#86868b' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.04)'; }}
                         onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                     >+</button>
                 </div>
@@ -336,11 +337,11 @@ export default function InfraCanvas({ children, canvasSize, panOffset, onPan }) 
                 style={{
                     width: canvasSize.width * minimapScale,
                     height: canvasSize.height * minimapScale,
-                    background: 'rgba(255,255,255,0.85)',
-                    border: '1px solid rgba(0,0,0,0.08)',
+                    background: isDark ? 'rgba(30,30,32,0.85)' : 'rgba(255,255,255,0.85)',
+                    border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
                     borderRadius: 8,
                     backdropFilter: 'blur(12px)',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                    boxShadow: isDark ? '0 4px 16px rgba(0,0,0,0.4)' : '0 2px 8px rgba(0,0,0,0.06)',
                 }}
             >
                 <div
@@ -367,7 +368,21 @@ export default function InfraCanvas({ children, canvasSize, panOffset, onPan }) 
                 onMouseUp={handleMouseUp}
                 onMouseLeave={handleMouseUp}
             >
-                <div className="canvas-grid" />
+                {/* Dynamic Grid */}
+                <div 
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        backgroundImage: `
+                            linear-gradient(${isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)'} 1px, transparent 1px),
+                            linear-gradient(90deg, ${isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)'} 1px, transparent 1px)
+                        `,
+                        backgroundSize: '40px 40px',
+                        pointerEvents: 'none',
+                        zIndex: 0,
+                        transition: 'background-image 0.5s ease',
+                    }} 
+                />
 
                 {/* Pannable + zoomable surface */}
                 <div

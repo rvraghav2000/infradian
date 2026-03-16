@@ -10,7 +10,7 @@ import { computeEdgePath, computeEdgeLabelPos } from '../layout';
  *
  * The ONLY element with rhythmic animation (glow + flowing dashes).
  */
-export default function FlowConnectors({ edges, layoutNodes }) {
+export default function FlowConnectors({ edges, layoutNodes, blastRadius, hoveredEdgeId, onEdgeHover }) {
     const paths = useMemo(() => {
         if (!layoutNodes) return [];
 
@@ -23,7 +23,7 @@ export default function FlowConnectors({ edges, layoutNodes }) {
                 const d = computeEdgePath(src, tgt);
                 const labelPos = computeEdgeLabelPos(src, tgt);
 
-                return { key: `${edge.source_id}->${edge.target_id}`, d, label: edge.label, labelPos, index: i };
+                return { key: `${edge.source_id}->${edge.target_id}`, d, label: edge.label, labelPos, index: i, source: edge.source_id, target: edge.target_id };
             })
             .filter(Boolean);
     }, [edges, layoutNodes]);
@@ -67,36 +67,67 @@ export default function FlowConnectors({ edges, layoutNodes }) {
                 </filter>
             </defs>
 
-            {paths.map((p) => (
-                <motion.g
-                    key={p.key}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ duration: 0.5, delay: 0.3 + p.index * 0.04 }}
-                >
-                    {/* Background path (subtle) */}
-                    <path
-                        d={p.d}
-                        fill="none"
-                        stroke="rgba(0,0,0,0.04)"
-                        strokeWidth={2.5}
-                    />
+            {paths.map((p) => {
+                const isHovered = hoveredEdgeId === p.key;
+                const isDimmed = blastRadius !== null && !(blastRadius.has(p.source) && blastRadius.has(p.target)) && !isHovered;
 
-                    {/* Animated glowing path */}
-                    <path
-                        d={p.d}
-                        fill="none"
-                        stroke="#007AFF"
-                        strokeWidth={1.5}
-                        strokeDasharray="8 6"
-                        markerEnd="url(#flow-arrow)"
-                        className="edge-line-glow edge-line-flow"
-                        filter="url(#connectorGlow)"
-                    />
+                return (
+                    <motion.g
+                        key={p.key}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.5, delay: 0.3 + p.index * 0.04 }}
+                        style={{ opacity: isDimmed ? 0.1 : 1 }}
+                    >
+                        <defs>
+                            {/* Soft glow filter */}
+                            <filter id="connectorGlow" x="-40%" y="-40%" width="180%" height="180%">
+                                <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+                                <feMerge>
+                                    <feMergeNode in="blur" />
+                                    <feMergeNode in="SourceGraphic" />
+                                </feMerge>
+                            </filter>
+                        </defs>
 
-                    {/* Edge label */}
+                        {/* Interactive invisible thicker path for easier hovering */}
+                        <path
+                            d={p.d}
+                            fill="none"
+                            stroke="transparent"
+                            strokeWidth={24}
+                            style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
+                            onMouseEnter={() => onEdgeHover && onEdgeHover(p.key)}
+                            onMouseLeave={() => onEdgeHover && onEdgeHover(null)}
+                        />
+
+                        {/* Background path (subtle) */}
+                        <path
+                            d={p.d}
+                            fill="none"
+                            stroke="rgba(0,0,0,0.06)"
+                            strokeWidth={isHovered ? 4 : 2.5}
+                        />
+
+                        {/* Animated glowing path */}
+                        <path
+                            d={p.d}
+                            fill="none"
+                            stroke="#007AFF"
+                            strokeWidth={isHovered ? 2.5 : 1.5}
+                            strokeDasharray="8 6"
+                            markerEnd="url(#flow-arrow)"
+                            className={`edge-line-flow ${isHovered ? 'edge-line-glow' : ''}`}
+                            filter={isHovered ? "url(#connectorGlow)" : ""}
+                        />
+
+                        {/* Edge label */}
                     {p.label && (
-                        <g>
+                        <g 
+                            style={{ cursor: 'pointer', pointerEvents: 'all' }}
+                            onMouseEnter={() => onEdgeHover && onEdgeHover(p.key)}
+                            onMouseLeave={() => onEdgeHover && onEdgeHover(null)}
+                        >
                             {/* Label background pill */}
                             <rect
                                 x={p.labelPos.x - (p.label.length * 3.5) - 6}
@@ -122,7 +153,7 @@ export default function FlowConnectors({ edges, layoutNodes }) {
                         </g>
                     )}
                 </motion.g>
-            ))}
+            )})}
         </svg>
     );
 }

@@ -1,40 +1,27 @@
 /**
  * layout.js — Auto-Layout Engine for Infradian
  *
- * Takes a flat list of nodes + edges and computes { x, y } positions
- * using a tiered horizontal flow layout.
- *
- * Layout strategy:
- *   1. Assign each node to a "tier" (column) based on its role in the flow
- *   2. Within each tier, stack nodes vertically with spacing
- *   3. Parent regions (VPC, Subnet) are computed as bounding boxes around children
+ * Swimlane Architecture Setup:
+ *   1. Assign Column (Tier) dynamically using Topo-Sort on edges to guarantee strictly left-to-right flows.
+ *   2. Group into Rows (Lanes) based on parent_id (Subnet).
+ *   3. Position nodes compactly within this grid.
+ *   4. Compute Region bounds bottom-up (Subnets → VPCs).
  */
 
 /* ── Tier assignment by node type ──────────────────────────────── */
 
 const TIER_MAP = {
-    // Tier 0 — Entry / External
     aws_route53: 0,
     aws_cloudfront: 1,
     aws_waf: 2,
     cicd_github_actions: 0,
     sre_pagerduty: 0,
-
-    // Tier 1 — Edge / Load Balancing
     aws_alb: 3,
-
-    // Tier 2 — Compute (Web)
     aws_instance: 4,
-
-    // Tier 3 — Compute (App) + Serverless
     aws_lambda: 5,
-
-    // Tier 4 — Data
     aws_db_instance: 6,
     aws_elasticache: 6,
     aws_s3: 7,
-
-    // Observability / Security
     aws_cloudwatch: 0,
     aws_secrets_manager: 7,
 };
@@ -65,195 +52,143 @@ export function getCategoryMeta(type) {
 
 /* ── Layout constants ──────────────────────────────────────────── */
 
-const NODE_W = 160;
-const NODE_H = 72;
-const TIER_GAP_X = 220;     // horizontal gap between tiers
-const NODE_GAP_Y = 32;      // vertical gap between nodes in same tier
-const REGION_PAD = 32;       // padding inside region boundaries
-const CANVAS_PAD = 80;       // padding around entire canvas
-
-/* ── Container types ───────────────────────────────────────────── */
+const NODE_W = 180;
+const NODE_H = 56;
+const TIER_GAP_X = 220;      // horizontal gap between columns
+const NODE_GAP_Y = 24;       // vertical gap between nodes in same cell
+const GROUP_GAP_Y = 64;      // vertical padding between swimlanes
+const REGION_PAD_X = 28;
+const REGION_PAD_Y = 28;
+const REGION_HEADER = 36;
+const CANVAS_PAD = 100;
 
 const REGION_TYPES = new Set(['aws_vpc', 'aws_subnet']);
 
+import dagre from 'dagre';
+
 /* ── Main layout function ──────────────────────────────────────── */
 
-/**
- * Computes positions for all nodes.
- *
- * Returns:
- *   layoutNodes: Map<nodeId, { x, y, w, h, node, isRegion }>
- *   canvasSize:  { width, height }
- */
 export function computeLayout(nodes, edges) {
+    const parentMap = {};
+    for (const n of nodes) {
+        if (n.parent_id) parentMap[n.id] = n.parent_id;
+    }
+
+    const g = new dagre.graphlib.Graph({ compound: true, directed: true });
+    g.setGraph({
+        rankdir: 'LR',
+        align: 'UL',
+        nodesep: 40,
+        edgesep: 20,
+        ranksep: 180,
+        marginx: CANVAS_PAD,
+        marginy: CANVAS_PAD,
+    });
+    g.setDefaultEdgeLabel(() => ({}));
+
+    // 1. Add all nodes
+    for (const n of nodes) {
+        const isRegion = REGION_TYPES.has(n.type);
+        if (isRegion) {
+            g.setNode(n.id, { label: n.label, isRegion: true, clusterLabelPos: 'top' });
+        } else {
+            g.setNode(n.id, { label: n.label, width: NODE_W, height: NODE_H, isRegion: false });
+        }
+    }
+
+    // 2. Set structural clusters
+    for (const n of nodes) {
+        if (n.parent_id && g.hasNode(n.parent_id)) {
+            g.setParent(n.id, n.parent_id);
+        }
+    }
+
+    // 3. Add visual edges
+    for (const e of edges) {
+        if (g.hasNode(e.source_id) && g.hasNode(e.target_id)) {
+            g.setEdge(e.source_id, e.target_id);
+        }
+    }
+
+    // Run layout
+    dagre.layout(g);
+
+    const layoutNodes = {};
     const nodeMap = {};
     for (const n of nodes) nodeMap[n.id] = n;
 
-    // Separate regions from leaf nodes
-    const regions = nodes.filter(n => REGION_TYPES.has(n.type));
-    const leaves = nodes.filter(n => !REGION_TYPES.has(n.type));
+    g.nodes().forEach(id => {
+        const dNode = g.node(id);
+        const n = nodeMap[id];
+        if (!dNode || !n) return;
 
-    // 1. Assign tiers
-    const tierAssign = {};
-    for (const n of leaves) {
-        tierAssign[n.id] = resolveTier(n, leaves, edges, nodeMap);
-    }
-
-    // 2. Group by tier
-    const tierGroups = {};
-    for (const n of leaves) {
-        const t = tierAssign[n.id];
-        if (!tierGroups[t]) tierGroups[t] = [];
-        tierGroups[t].push(n);
-    }
-
-    // Sort tiers numerically
-    const sortedTiers = Object.keys(tierGroups).map(Number).sort((a, b) => a - b);
-
-    // 3. Position nodes
-    const layoutNodes = {};
-    let curX = CANVAS_PAD;
-
-    // Separate "external" nodes (tier 0 nodes that aren't in a VPC)
-    // into top/bottom lanes
-    for (const tier of sortedTiers) {
-        const group = tierGroups[tier];
-
-        // Sort within tier for visual consistency
-        group.sort((a, b) => a.label.localeCompare(b.label));
-
-        const totalH = group.length * (NODE_H + NODE_GAP_Y) - NODE_GAP_Y;
-        let curY = CANVAS_PAD + Math.max(0, (600 - totalH) / 2); // center vertically
-
-        for (const n of group) {
-            layoutNodes[n.id] = {
-                x: curX,
-                y: curY,
-                w: NODE_W,
-                h: NODE_H,
+        if (dNode.isRegion) {
+            // Dagre computes the total bounding box center and size for clusters
+            // We pad it slightly to look more like our region boxes
+            const rx = dNode.x - dNode.width / 2 - REGION_PAD_X;
+            const ry = dNode.y - dNode.height / 2 - REGION_HEADER;
+            const rw = dNode.width + REGION_PAD_X * 2;
+            const rh = dNode.height + REGION_HEADER + REGION_PAD_Y;
+            
+            layoutNodes[id] = {
+                x: rx,
+                y: ry,
+                w: Math.max(rw, 200), // Enforce min width
+                h: rh,
                 node: n,
-                isRegion: false,
+                isRegion: true
             };
-            curY += NODE_H + NODE_GAP_Y;
-        }
-
-        curX += NODE_W + TIER_GAP_X;
-    }
-
-    // 4. Compute region boundaries around children
-    for (const region of regions) {
-        const childIds = nodes
-            .filter(n => n.parent_id === region.id)
-            .map(n => n.id);
-
-        const childLayouts = childIds
-            .map(id => layoutNodes[id])
-            .filter(Boolean);
-
-        if (childLayouts.length === 0) {
-            // Region with no positioned children — place near center
-            layoutNodes[region.id] = {
-                x: CANVAS_PAD,
-                y: CANVAS_PAD,
-                w: 200,
-                h: 100,
-                node: region,
-                isRegion: true,
+        } else {
+            // For standard nodes, dagre coordinates are the center
+            layoutNodes[id] = {
+                x: dNode.x - dNode.width / 2,
+                y: dNode.y - dNode.height / 2,
+                w: dNode.width,
+                h: dNode.height,
+                node: n,
+                isRegion: false
             };
-            continue;
         }
+    });
 
-        const minX = Math.min(...childLayouts.map(c => c.x)) - REGION_PAD;
-        const minY = Math.min(...childLayouts.map(c => c.y)) - REGION_PAD - 32; // extra for header
-        const maxX = Math.max(...childLayouts.map(c => c.x + c.w)) + REGION_PAD;
-        const maxY = Math.max(...childLayouts.map(c => c.y + c.h)) + REGION_PAD;
-
-        layoutNodes[region.id] = {
-            x: minX,
-            y: minY,
-            w: maxX - minX,
-            h: maxY - minY,
-            node: region,
-            isRegion: true,
-        };
-    }
-
-    // 5. Compute canvas size
     const allLayouts = Object.values(layoutNodes);
+    if (allLayouts.length === 0) {
+        return { layoutNodes, canvasSize: { width: 1200, height: 800 } };
+    }
+
     const canvasW = Math.max(...allLayouts.map(l => l.x + l.w)) + CANVAS_PAD;
     const canvasH = Math.max(...allLayouts.map(l => l.y + l.h)) + CANVAS_PAD;
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1440;
+    const vh = typeof window !== 'undefined' ? window.innerHeight : 900;
 
     return {
         layoutNodes,
-        canvasSize: { width: Math.max(canvasW, 1200), height: Math.max(canvasH, 800) },
+        canvasSize: { width: Math.max(canvasW, vw), height: Math.max(canvasH, vh) },
     };
 }
 
-/**
- * Resolve tier for a node, considering its type and parent placement.
- */
-function resolveTier(node, allLeaves, edges, nodeMap) {
-    const baseTier = TIER_MAP[node.type];
-    if (baseTier !== undefined) return baseTier;
+/* ── Edge path computation (Orthogonal Curved) ─────────────────── */
 
-    // Fallback: put unknown types in tier 4
-    return 4;
-}
-
-/* ── Edge path computation (curved connectors) ─────────────────── */
-
-/**
- * Compute an SVG path string for a curved horizontal→vertical connector.
- *
- * Strategy: exit right from source center-right → horizontal → curve → vertical → curve → enter target center-left
- */
 export function computeEdgePath(srcLayout, tgtLayout) {
-    const RADIUS = 20; // curve radius
-
-    // Source exit point (right edge, vertically centered)
     const sx = srcLayout.x + srcLayout.w;
     const sy = srcLayout.y + srcLayout.h / 2;
-
-    // Target entry point (left edge, vertically centered)
     const tx = tgtLayout.x;
     const ty = tgtLayout.y + tgtLayout.h / 2;
 
     const dx = tx - sx;
-    const dy = ty - sy;
+    // Cubic bezier: control points are horizontally offset from start and end.
+    // This creates a smooth curve without sharp 90-degree orthogonal overlaps.
+    const cpOffset = Math.max(Math.abs(dx) / 2, 40);
 
-    // If target is directly right with small vertical offset — simple curve
-    if (Math.abs(dy) < 4) {
-        return `M ${sx} ${sy} L ${tx} ${ty}`;
-    }
-
-    // Midpoint for the horizontal→vertical transition
-    const midX = sx + dx / 2;
-    const dirY = dy > 0 ? 1 : -1;
-    const absR = Math.min(RADIUS, Math.abs(dy) / 2, Math.abs(dx) / 4);
-
-    // Path: horizontal → curve → vertical → curve → horizontal
-    return [
-        `M ${sx} ${sy}`,
-        `L ${midX - absR} ${sy}`,
-        `Q ${midX} ${sy} ${midX} ${sy + dirY * absR}`,
-        `L ${midX} ${ty - dirY * absR}`,
-        `Q ${midX} ${ty} ${midX + absR} ${ty}`,
-        `L ${tx} ${ty}`,
-    ].join(' ');
+    return `M ${sx} ${sy} C ${sx + cpOffset} ${sy}, ${tx - cpOffset} ${ty}, ${tx} ${ty}`;
 }
-
-/* ── Edge label position ───────────────────────────────────────── */
 
 export function computeEdgeLabelPos(srcLayout, tgtLayout) {
     const sx = srcLayout.x + srcLayout.w;
     const sy = srcLayout.y + srcLayout.h / 2;
     const tx = tgtLayout.x;
     const ty = tgtLayout.y + tgtLayout.h / 2;
-
-    return {
-        x: (sx + tx) / 2,
-        y: (sy + ty) / 2 - 10,
-    };
+    return { x: (sx + tx) / 2, y: (sy + ty) / 2 - 10 };
 }
 
 export { NODE_W, NODE_H };
