@@ -71,7 +71,7 @@ import dagre from 'dagre';
 export function computeLayout(nodes, edges) {
     const parentMap = {};
     for (const n of nodes) {
-        if (n.parent_id) parentMap[n.id] = n.parent_id;
+        if (n.parentId) parentMap[n.id] = n.parentId;
     }
 
     const g = new dagre.graphlib.Graph({ compound: true, directed: true });
@@ -98,8 +98,8 @@ export function computeLayout(nodes, edges) {
 
     // 2. Set structural clusters
     for (const n of nodes) {
-        if (n.parent_id && g.hasNode(n.parent_id)) {
-            g.setParent(n.id, n.parent_id);
+        if (n.parentId && g.hasNode(n.parentId)) {
+            g.setParent(n.id, n.parentId);
         }
     }
 
@@ -117,38 +117,83 @@ export function computeLayout(nodes, edges) {
     const nodeMap = {};
     for (const n of nodes) nodeMap[n.id] = n;
 
+    // Separate standard nodes and regions for the second pass
+    const stdNodes = [];
+    const regionNodes = [];
+    
     g.nodes().forEach(id => {
         const dNode = g.node(id);
         const n = nodeMap[id];
         if (!dNode || !n) return;
+        if (dNode.isRegion) regionNodes.push({ id, dNode, n });
+        else stdNodes.push({ id, dNode, n });
+    });
 
-        if (dNode.isRegion) {
-            // Dagre computes the total bounding box center and size for clusters
-            // We pad it slightly to look more like our region boxes
-            const rx = dNode.x - dNode.width / 2 - REGION_PAD_X;
-            const ry = dNode.y - dNode.height / 2 - REGION_HEADER;
-            const rw = dNode.width + REGION_PAD_X * 2;
-            const rh = dNode.height + REGION_HEADER + REGION_PAD_Y;
-            
+    // 1. Assign positions to standard nodes
+    stdNodes.forEach(({ id, dNode, n }) => {
+        const dw = dNode.width || NODE_W;
+        const dh = dNode.height || NODE_H;
+        const dx = dNode.x || 0;
+        const dy = dNode.y || 0;
+
+        layoutNodes[id] = {
+            x: Math.round(dx - dw / 2),
+            y: Math.round(dy - dh / 2),
+            w: Math.round(dw),
+            h: Math.round(dh),
+            node: n,
+            isRegion: false
+        };
+    });
+
+    // 2. Second Pass: Calculate region bounds based on children
+    const REGION_PADDING = 60;
+    
+    // Sort regions by depth or dependency to handle nested regions (Subnet -> VPC)
+    // For Infradian, we know SUBNET is inside VPC. We'll simply iterate.
+    // To handle nesting correctly, we process subnets first, then VPCs.
+    const sortedRegions = [...regionNodes].sort((a, b) => {
+        if (a.n.type === 'aws_subnet' && b.n.type === 'aws_vpc') return -1;
+        if (a.n.type === 'aws_vpc' && b.n.type === 'aws_subnet') return 1;
+        return 0;
+    });
+
+    sortedRegions.forEach(({ id, n }) => {
+        const children = nodes.filter(child => child.parentId === id);
+        
+        if (children.length === 0) {
+            // Fallback for empty regions (unlikely in prod, but possible in dev)
             layoutNodes[id] = {
-                x: rx,
-                y: ry,
-                w: Math.max(rw, 200), // Enforce min width
-                h: rh,
-                node: n,
-                isRegion: true
+                x: 0, y: 0, w: 400, h: 200,
+                node: n, isRegion: true
             };
-        } else {
-            // For standard nodes, dagre coordinates are the center
-            layoutNodes[id] = {
-                x: dNode.x - dNode.width / 2,
-                y: dNode.y - dNode.height / 2,
-                w: dNode.width,
-                h: dNode.height,
-                node: n,
-                isRegion: false
-            };
+            return;
         }
+
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+        children.forEach(child => {
+            const childLayout = layoutNodes[child.id];
+            if (!childLayout) return;
+            minX = Math.min(minX, childLayout.x);
+            minY = Math.min(minY, childLayout.y);
+            maxX = Math.max(maxX, childLayout.x + childLayout.w);
+            maxY = Math.max(maxY, childLayout.y + childLayout.h);
+        });
+
+        const rw = maxX - minX + REGION_PADDING * 2;
+        const rh = maxY - minY + REGION_PADDING * 2;
+        const rx = minX - REGION_PADDING;
+        const ry = minY - REGION_PADDING;
+
+        layoutNodes[id] = {
+            x: Math.round(rx),
+            y: Math.round(ry),
+            w: Math.round(rw),
+            h: Math.round(rh),
+            node: n,
+            isRegion: true
+        };
     });
 
     const allLayouts = Object.values(layoutNodes);

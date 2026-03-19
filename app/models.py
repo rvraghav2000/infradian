@@ -122,6 +122,8 @@ class Node(BaseModel):
     )
     parent_id: Optional[str] = Field(
         default=None,
+        validation_alias="parentId",
+        serialization_alias="parentId",
         description="Parent node id for nested architectures (None = root).",
     )
     metrics: NodeMetrics = Field(

@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { getCategoryMeta } from '../layout';
 
-export default function NodeDetailsModal({ nodeLayout, onClose, theme }) {
+export default function NodeDetailsModal({ nodeLayout, onClose, onDelete, theme }) {
     if (!nodeLayout || !nodeLayout.node) return null;
 
     const { node, w } = nodeLayout;
@@ -120,9 +120,25 @@ export default function NodeDetailsModal({ nodeLayout, onClose, theme }) {
 
                         {/* ── Bottom: Raw Properties ── */}
                         <div className="flex-1 overflow-y-auto p-6" style={{ background: isDark ? '#2c2c2e' : '#fff' }}>
-                            <h3 className="text-[11px] font-semibold uppercase tracking-wider mb-4" style={{ color: isDark ? '#86868b' : '#86868b', letterSpacing: '0.05em' }}>
-                                Terraform Configuration Attributes
-                            </h3>
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: isDark ? '#86868b' : '#86868b', letterSpacing: '0.05em' }}>
+                                    Terraform Configuration Attributes
+                                </h3>
+                                {node.id.startsWith('planned-') && (
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); onDelete(node.id); }}
+                                        className="text-[10px] font-bold uppercase tracking-tight px-3 py-1.5 rounded-lg border-0 cursor-pointer transition-all"
+                                        style={{
+                                            background: isDark ? 'rgba(255,59,48,0.1)' : 'rgba(255,59,48,0.08)',
+                                            color: '#FF3B30',
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(255,59,48,0.2)' : 'rgba(255,59,48,0.15)'}
+                                        onMouseLeave={e => e.currentTarget.style.background = isDark ? 'rgba(255,59,48,0.1)' : 'rgba(255,59,48,0.08)'}
+                                    >
+                                        Delete Resource
+                                    </button>
+                                )}
+                            </div>
                             
                             {Object.keys(attrs).length === 0 ? (
                                 <div className="text-sm italic" style={{ color: isDark ? '#636366' : '#aeaeb2' }}>

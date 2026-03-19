@@ -39,9 +39,9 @@ function computeBlastRadius(focusedId, nodes, edges, hoveredEdgeId) {
   const initialConnected = [...connected];
   for (const id of initialConnected) {
     let cur = nodeMap[id];
-    while (cur && cur.parent_id) {
-      connected.add(cur.parent_id);
-      cur = nodeMap[cur.parent_id];
+    while (cur && cur.parentId) {
+      connected.add(cur.parentId);
+      cur = nodeMap[cur.parentId];
     }
   }
 
@@ -51,8 +51,13 @@ function computeBlastRadius(focusedId, nodes, edges, hoveredEdgeId) {
 /* ── App ───────────────────────────────────────────────────────── */
 
 export default function App() {
-  const [data, setData] = useState(null);
+  const [rawData, setRawData] = useState({ nodes: [], edges: [] });
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [layoutedNodes, setLayoutedNodes] = useState({});
+  const [layoutedEdges, setLayoutedEdges] = useState([]);
+  const [layoutedCanvasSize, setLayoutedCanvasSize] = useState({ width: 1440, height: 720 });
+  
   const [cmdKOpen, setCmdKOpen] = useState(false);
   const [focusedNodeId, setFocusedNodeId] = useState(null);
   const [expandedNodeId, setExpandedNodeId] = useState(null);
@@ -63,13 +68,136 @@ export default function App() {
 
   /* ── Fetch ────────────────────────────────────────────────────── */
   useEffect(() => {
-    fetch('/api/v1/graph')
-      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-      .then(setData)
-      .catch(e => setError(e.message));
+    const loadData = () => {
+      fetch('/api/v1/nodes')
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+        .then(data => {
+            setRawData(data);
+            setIsLoading(false);
+        })
+        .catch(e => {
+            setError(e.message);
+            setIsLoading(false);
+        });
+    };
+
+    loadData();
+    const timer = setInterval(loadData, 5000); // Poll every 5s
+    return () => clearInterval(timer);
   }, []);
 
-  /* ── Cmd+K ────────────────────────────────────────────────────── */
+  /* ── Layout Sync (Dagre Integration) ────────────────────────── */
+  useEffect(() => {
+    if (!rawData || !rawData.nodes) return;
+
+    const displayNodes = isPlanningMode 
+        ? rawData.nodes 
+        : rawData.nodes.filter(n => n.status !== 'planned');
+
+    const regionTypes = new Set(['aws_vpc', 'aws_subnet']);
+    const nodeMap = new Map(displayNodes.map(n => [n.id, n]));
+    
+    const visualEdges = (rawData.edges || []).filter(e => {
+        const src = nodeMap.get(e.source_id);
+        const tgt = nodeMap.get(e.target_id);
+        if (!src || !tgt) return false;
+        if (regionTypes.has(src.type) || regionTypes.has(tgt.type)) return false;
+        return true;
+    });
+
+    const layoutObj = computeLayout(displayNodes, visualEdges);
+    
+    setLayoutedNodes(layoutObj.layoutNodes);
+    setLayoutedEdges(visualEdges);
+    setLayoutedCanvasSize(layoutObj.canvasSize);
+  }, [rawData, isPlanningMode]);
+
+  /* ── Node click (history toggle) ─────────────────────────────── */
+  const handleNodeClick = useCallback((nodeId) => {
+    setExpandedNodeId(prev => prev === nodeId ? null : nodeId);
+    setFocusedNodeId(nodeId);
+  }, []);
+
+  /* ── God mode select → pan + focus ───────────────────────────── */
+  const handleGodModeSelect = useCallback((nodeId) => {
+    setFocusedNodeId(nodeId);
+    setExpandedNodeId(null);
+
+    const layout = layoutedNodes[nodeId];
+    if (!layout) return;
+
+    const viewW = window.innerWidth;
+    const viewH = window.innerHeight;
+    const centerX = -(layout.x + layout.w / 2) + viewW / 2;
+    const centerY = -(layout.y + layout.h / 2) + viewH / 2;
+
+    setPanOffset({ x: centerX, y: centerY });
+  }, [layoutedNodes]);
+
+  /* ── Clear focus ─────────────────────────────────────────────── */
+  const clearFocus = useCallback(() => {
+    setFocusedNodeId(null);
+    setExpandedNodeId(null);
+    setPanOffset({ x: 0, y: 0 });
+  }, []);
+
+  /* ── Blast radius ────────────────────────────────────────────── */
+  const blastRadius = useMemo(() => {
+    if (!rawData) return null;
+    return computeBlastRadius(focusedNodeId, rawData.nodes, rawData.edges, hoveredEdgeId);
+  }, [focusedNodeId, rawData, hoveredEdgeId]);
+
+  /* ── Drag & Drop ─────────────────────────────────────────────── */
+  const handleDropToCanvas = useCallback(async (type) => {
+    // Determine target parent if any. For simplicity, drop as top-level orphan for now
+    const newId = `planned-${type.replace(/_/g, '-')}-${Math.floor(Math.random()*1000)}`;
+    const newNode = {
+      id: newId,
+      type: type,
+      label: `Draft ${NODE_CATEGORIES[type]?.label || type.replace('aws_', '')}`,
+      parentId: null,
+      status: 'live',
+      metrics: { current_load: 0 },
+      history: [],
+      attributes: {}
+    };
+
+    setRawData(prev => ({
+      ...prev,
+      nodes: [...prev.nodes, newNode]
+    }));
+
+    try {
+      await fetch('/api/v1/nodes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newNode)
+      });
+    } catch(e) { console.error("Could not persist node", e); }
+  }, []);
+
+  /* ── Delete Node ──────────────────────────────────────────────── */
+  const handleDeleteNode = useCallback(async (nodeId) => {
+    // Optimistic update
+    setRawData(prev => ({
+      ...prev,
+      nodes: prev.nodes.filter(n => n.id !== nodeId),
+      edges: prev.edges.filter(e => e.source_id !== nodeId && e.target_id !== nodeId)
+    }));
+    
+    setFocusedNodeId(null);
+    setExpandedNodeId(null);
+
+    console.log("handleDeleteNode calling for:", nodeId);
+    try {
+      const res = await fetch(`/api/v1/nodes/${nodeId}`, {
+        method: 'DELETE'
+      });
+      if (!res.ok) console.error("Backend delete failed", res.status);
+    } catch(e) { console.error("Could not delete node", e); }
+  }, []);
+
+  /* ── Shortcuts ────────────────────────────────────────────────── */
   useEffect(() => {
     function handleKeyDown(e) {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -81,94 +209,21 @@ export default function App() {
         else if (focusedNodeId) clearFocus();
         else if (expandedNodeId) setExpandedNodeId(null);
       }
+      // Node Deletion Shortcut
+      if (focusedNodeId && (e.key === 'Delete' || e.key === 'Backspace')) {
+        console.log("Delete key pressed for:", focusedNodeId);
+        // Only allow deletion of user-added nodes (prefixed with 'planned-')
+        if (focusedNodeId.startsWith('planned-')) {
+          e.preventDefault();
+          handleDeleteNode(focusedNodeId);
+        } else {
+          console.info("System-managed nodes are protected from deletion.");
+        }
+      }
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cmdKOpen, focusedNodeId, expandedNodeId]);
-
-  /* ── Layout ───────────────────────────────────────────────────── */
-  const { layoutNodes, visualEdges, canvasSize } = useMemo(() => {
-    if (!data) return { layoutNodes: {}, visualEdges: [], canvasSize: { width: 1440, height: 720 } };
-
-    const displayNodes = isPlanningMode ? data.nodes : data.nodes.filter(n => n.status !== 'planned');
-
-    const regionTypes = new Set(['aws_vpc', 'aws_subnet']);
-    const nodeMap = new Map(displayNodes.map(n => [n.id, n]));
-    
-    const visualEdges = data.edges.filter(e => {
-        const src = nodeMap.get(e.source_id);
-        const tgt = nodeMap.get(e.target_id);
-        if (!src || !tgt) return false;
-        if (regionTypes.has(src.type) || regionTypes.has(tgt.type)) return false;
-        return true;
-    });
-
-    const layoutObj = computeLayout(displayNodes, visualEdges);
-    return { ...layoutObj, visualEdges };
-  }, [data, isPlanningMode]);
-
-  /* ── Node click (history toggle) ─────────────────────────────── */
-  const handleNodeClick = useCallback((nodeId) => {
-    setExpandedNodeId(prev => prev === nodeId ? null : nodeId);
-  }, []);
-
-  /* ── God mode select → pan + focus ───────────────────────────── */
-  const handleGodModeSelect = useCallback((nodeId) => {
-    setFocusedNodeId(nodeId);
-    setExpandedNodeId(null);
-
-    const layout = layoutNodes[nodeId];
-    if (!layout) return;
-
-    const viewW = window.innerWidth;
-    const viewH = window.innerHeight;
-    const centerX = -(layout.x + layout.w / 2) + viewW / 2;
-    const centerY = -(layout.y + layout.h / 2) + viewH / 2;
-
-    setPanOffset({ x: centerX, y: centerY });
-  }, [layoutNodes]);
-
-  /* ── Clear focus ─────────────────────────────────────────────── */
-  const clearFocus = useCallback(() => {
-    setFocusedNodeId(null);
-    setExpandedNodeId(null);
-    setPanOffset({ x: 0, y: 0 });
-  }, []);
-
-  /* ── Blast radius ────────────────────────────────────────────── */
-  const blastRadius = useMemo(() => {
-    if (!data) return null;
-    return computeBlastRadius(focusedNodeId, data.nodes, data.edges, hoveredEdgeId);
-  }, [focusedNodeId, data, hoveredEdgeId]);
-
-  /* ── Drag & Drop ─────────────────────────────────────────────── */
-  const handleDropToCanvas = useCallback(async (type) => {
-    // Determine target parent if any. For simplicity, drop as top-level orphan for now
-    const newId = `planned-${type.replace(/_/g, '-')}-${Math.floor(Math.random()*1000)}`;
-    const newNode = {
-      id: newId,
-      type: type,
-      label: `Draft ${NODE_CATEGORIES[type]?.label || type.replace('aws_', '')}`,
-      parent_id: null,
-      status: 'planned',
-      metrics: { current_load: 0 },
-      history: [],
-      attributes: {}
-    };
-
-    setData(prev => ({
-      ...prev,
-      nodes: [...prev.nodes, newNode]
-    }));
-
-    try {
-      await fetch('/api/v1/nodes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newNode)
-      });
-    } catch(e) { console.error("Could not persist planned node", e); }
-  }, []);
+  }, [cmdKOpen, focusedNodeId, expandedNodeId, rawData, handleDeleteNode, clearFocus]);
 
   /* ── Render ──────────────────────────────────────────────────── */
 
@@ -180,7 +235,7 @@ export default function App() {
     );
   }
 
-  if (!data) {
+  if (isLoading && (!rawData || rawData.nodes.length === 0)) {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="text-sm animate-pulse" style={{ color: '#007AFF' }}>
@@ -191,9 +246,9 @@ export default function App() {
   }
 
   // Sort nodes: regions first (as background), then cards on top
-  const sortedLayoutIds = Object.keys(layoutNodes).sort((a, b) => {
-    const la = layoutNodes[a];
-    const lb = layoutNodes[b];
+  const sortedLayoutIds = Object.keys(layoutedNodes).sort((a, b) => {
+    const la = layoutedNodes[a];
+    const lb = layoutedNodes[b];
     if (la.isRegion && !lb.isRegion) return -1;
     if (!la.isRegion && lb.isRegion) return 1;
     return 0;
@@ -328,15 +383,15 @@ export default function App() {
 
       {/* ── Canvas ───────────────────────────────────────────────────── */}
       <InfraCanvas
-        canvasSize={canvasSize}
+        canvasSize={layoutedCanvasSize}
         panOffset={panOffset}
         onPan={setPanOffset}
         theme={theme}
       >
         {/* Flow connectors (curved paths) */}
         <FlowConnectors 
-          edges={visualEdges} 
-          layoutNodes={layoutNodes} 
+          edges={layoutedEdges} 
+          layoutNodes={layoutedNodes} 
           blastRadius={blastRadius}
           hoveredEdgeId={hoveredEdgeId}
           onEdgeHover={setHoveredEdgeId}
@@ -344,7 +399,7 @@ export default function App() {
 
         {/* Nodes */}
         {sortedLayoutIds.map(id => {
-          const nl = layoutNodes[id];
+          const nl = layoutedNodes[id];
           const isDimmed = blastRadius !== null && !blastRadius.has(id);
           const isFocused = focusedNodeId === id;
 
@@ -365,8 +420,9 @@ export default function App() {
 
       {/* Node Details Modal */}
       <NodeDetailsModal 
-        nodeLayout={focusedNodeId ? layoutNodes[focusedNodeId] : null} 
+        nodeLayout={focusedNodeId ? layoutedNodes[focusedNodeId] : null} 
         onClose={clearFocus}
+        onDelete={handleDeleteNode}
         theme={theme}
       />
 
@@ -399,8 +455,8 @@ export default function App() {
 
       {/* Command Palette */}
       <CommandPalette
-        nodes={data.nodes}
-        edges={data.edges}
+        nodes={rawData.nodes}
+        edges={rawData.edges}
         isOpen={cmdKOpen}
         onClose={() => setCmdKOpen(false)}
         onSelect={handleGodModeSelect}

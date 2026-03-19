@@ -68,7 +68,9 @@ function RegionNode({ layout, meta, dimmed, focused, theme }) {
             }}
             transition={{ duration: 0.4 }}
             style={{
-                left: x, top: y, width: w, height: h,
+                left: x, top: y,
+                width: Math.round(w),
+                height: Math.round(h),
                 position: 'absolute',
                 border: focused
                     ? '2px solid #007AFF'
@@ -80,6 +82,9 @@ function RegionNode({ layout, meta, dimmed, focused, theme }) {
                     ? (isDark ? 'rgba(10,132,255,0.03)' : 'rgba(0,122,255,0.02)') 
                     : (isDark ? 'rgba(94,92,230,0.03)' : 'rgba(88,86,214,0.02)'),
                 pointerEvents: 'none',
+                backfaceVisibility: 'hidden',
+                transformStyle: 'preserve-3d',
+                willChange: 'transform, width, height',
             }}
         >
             <div

@@ -161,15 +161,34 @@ def report(
 
 
 @app.command()
-def status() -> None:
+def status(
+    server_url: str = typer.Option("http://localhost:8000", help="API Server URL.")
+) -> None:
     """Print a quick summary of the current infrastructure graph."""
     if not SAMPLE_PATH.exists():
         typer.echo("⚠️  No sample_payload.json found. Run `infradian parse` first.", err=True)
         raise typer.Exit(code=1)
 
     from .models import InfraGraph
-
-    raw = json.loads(SAMPLE_PATH.read_text(encoding="utf-8"))
+    from .models import InfraGraph
+    
+    # Try to get data from API instead of local file
+    try:
+        req = urllib.request.Request(f"{server_url}/api/v1/graph")
+        with urllib.request.urlopen(req) as response:
+            if response.status == 200:
+                raw = json.loads(response.read().decode())
+            else:
+                typer.echo(f"⚠️  Could not fetch live graph (Status {response.status}). Using fallback sample.")
+                raw = json.loads(SAMPLE_PATH.read_text(encoding="utf-8"))
+    except Exception as e:
+        typer.echo(f"⚠️  API unreachable: {e}. Using fallback sample.")
+        if SAMPLE_PATH.exists():
+            raw = json.loads(SAMPLE_PATH.read_text(encoding="utf-8"))
+        else:
+            typer.echo("❌ No sample payload found.")
+            raise typer.Exit(code=1)
+    
     graph = InfraGraph.model_validate(raw)
 
     # Collect stats
@@ -209,6 +228,107 @@ def status() -> None:
             typer.echo(f"    • {label}: {msg}")
 
     typer.echo("")
+
+
+@app.command()
+def draft(
+    resource_type: str = typer.Argument(..., help="Type of resource (e.g., aws_ec2_instance, aws_lambda_function)."),
+    name: str = typer.Option(None, "--name", "-n", help="Optional friendly label for the resource."),
+    status: str = typer.Option("live", "--status", "-s", help="Initial status (live or planned).")
+) -> None:
+    """Draft a new resource onto the live Infradian canvas."""
+    if not CONFIG_PATH.exists():
+        # For local development where server is running on localhost:8000
+        server_url = "http://localhost:8000"
+        token = "dev-token-123"
+        typer.echo("⚠️  No config found. Defaulting to http://localhost:8000 for local sync.")
+    else:
+        config = json.loads(CONFIG_PATH.read_text())
+        server_url = config.get("server_url")
+        token = config.get("token")
+
+    if not server_url:
+        typer.echo("❌ Server URL required. Run `infradian configure`.", err=True)
+        raise typer.Exit(code=1)
+
+    import uuid
+    import urllib.request
+
+    # Clean up standard provider prefixes for nicer label if name not provided
+    display_type = resource_type.replace("aws_", "") if name is None else None
+    
+    node = {
+        "id": f"planned-{resource_type.replace('_', '-')}-{str(uuid.uuid4())[:6]}",
+        "type": resource_type,
+        "label": name or f"Draft {display_type}",
+        "parent_id": None,
+        "status": status,
+        "metrics": {"current_load": 0},
+        "history": [],
+        "attributes": {}
+    }
+
+    payload = json.dumps(node).encode("utf-8")
+    endpoint = f"{server_url}/api/v1/nodes"
+
+    req = urllib.request.Request(
+        endpoint,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
+        },
+        method="POST"
+    )
+
+    try:
+        with urllib.request.urlopen(req) as response:
+            if response.status == 201:
+                status_emoji = "✨" if status == "planned" else "🚀"
+                typer.echo(f"{status_emoji} Resource deployed! Node ID: {node['id']} [Status: {status}]")
+            else:
+                typer.echo(f"⚠️ Unexpected status: {response.status}", err=True)
+    except Exception as e:
+        typer.echo(f"❌ Failed to sync to map: {e}", err=True)
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def remove(
+    node_id: str = typer.Argument(..., help="The ID of the node to remove.")
+) -> None:
+    """Remove a resource from the Infradian canvas."""
+    if not CONFIG_PATH.exists():
+        server_url = "http://localhost:8000"
+        token = "dev-token-123"
+    else:
+        config = json.loads(CONFIG_PATH.read_text())
+        server_url = config.get("server_url")
+        token = config.get("token")
+
+    if not server_url:
+        typer.echo("❌ Server URL required. Run `infradian configure`.", err=True)
+        raise typer.Exit(code=1)
+
+    endpoint = f"{server_url}/api/v1/nodes/{node_id}"
+
+    req = urllib.request.Request(
+        endpoint,
+        headers={
+            "Authorization": f"Bearer {token}",
+        },
+        method="DELETE"
+    )
+
+    try:
+        with urllib.request.urlopen(req) as response:
+            if response.status == 200:
+                typer.echo(f"🗑️ Node {node_id} removed from canvas.")
+            else:
+                typer.echo(f"⚠️ Unexpected status: {response.status}", err=True)
+    except Exception as e:
+        typer.echo(f"❌ Failed to remove node: {e}", err=True)
+        raise typer.Exit(code=1)
 
 
 def main() -> None:

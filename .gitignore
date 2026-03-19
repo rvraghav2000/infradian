@@ -1,0 +1,18 @@
+# Local development
+/venv
+/__pycache__
+*.pyc
+
+# Neo4j Data (Large files)
+neo4j_data/
+
+# Backend
+.env
+db_state.json
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# System
+.DS_Store
