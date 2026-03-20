@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import InfraCanvas from './components/IsometricCanvas';
 import InfraNode from './components/InfraNode';
 import FlowConnectors from './components/EdgeLines';
@@ -57,6 +57,7 @@ export default function App() {
   const [layoutedNodes, setLayoutedNodes] = useState({});
   const [layoutedEdges, setLayoutedEdges] = useState([]);
   const [layoutedCanvasSize, setLayoutedCanvasSize] = useState({ width: 1440, height: 720 });
+  const [zoom, setZoom] = useState(1);
   
   const [cmdKOpen, setCmdKOpen] = useState(false);
   const [focusedNodeId, setFocusedNodeId] = useState(null);
@@ -65,39 +66,26 @@ export default function App() {
   const [hoveredEdgeId, setHoveredEdgeId] = useState(null);
   const [theme, setTheme] = useState('light');
   const [isPlanningMode, setIsPlanningMode] = useState(false);
+  const initialLayoutPerformed = useRef(false);
 
-  /* ── Fetch ────────────────────────────────────────────────────── */
-  useEffect(() => {
-    const loadData = () => {
-      fetch('/api/v1/nodes')
-        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-        .then(data => {
-            setRawData(data);
-            setIsLoading(false);
-        })
-        .catch(e => {
-            setError(e.message);
-            setIsLoading(false);
-        });
-    };
+  // Drag state
+  const [draggedNodeId, setDraggedNodeId] = useState(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const dragStartCoords = useRef({ x: 0, y: 0 });
+  const wasDragging = useRef(false);
 
-    loadData();
-    const timer = setInterval(loadData, 5000); // Poll every 5s
-    return () => clearInterval(timer);
-  }, []);
+  /* ── Layout Logic (Dagre Integration) ────────────────────────── */
+  const applyAutoLayout = useCallback((nodes = rawData.nodes, edges = rawData.edges, planningMode = isPlanningMode) => {
+    if (!nodes || nodes.length === 0) return;
 
-  /* ── Layout Sync (Dagre Integration) ────────────────────────── */
-  useEffect(() => {
-    if (!rawData || !rawData.nodes) return;
-
-    const displayNodes = isPlanningMode 
-        ? rawData.nodes 
-        : rawData.nodes.filter(n => n.status !== 'planned');
+    const displayNodes = planningMode 
+        ? nodes 
+        : nodes.filter(n => n.status !== 'planned');
 
     const regionTypes = new Set(['aws_vpc', 'aws_subnet']);
     const nodeMap = new Map(displayNodes.map(n => [n.id, n]));
     
-    const visualEdges = (rawData.edges || []).filter(e => {
+    const visualEdges = (edges || []).filter(e => {
         const src = nodeMap.get(e.source_id);
         const tgt = nodeMap.get(e.target_id);
         if (!src || !tgt) return false;
@@ -110,13 +98,121 @@ export default function App() {
     setLayoutedNodes(layoutObj.layoutNodes);
     setLayoutedEdges(visualEdges);
     setLayoutedCanvasSize(layoutObj.canvasSize);
-  }, [rawData, isPlanningMode]);
+  }, [rawData.nodes, rawData.edges, isPlanningMode]);
 
-  /* ── Node click (history toggle) ─────────────────────────────── */
-  const handleNodeClick = useCallback((nodeId) => {
-    setExpandedNodeId(prev => prev === nodeId ? null : nodeId);
+  /* ── Fetch ────────────────────────────────────────────────────── */
+  useEffect(() => {
+    const loadData = () => {
+      fetch('/api/v1/nodes')
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+        .then(data => {
+            setRawData(data);
+            setIsLoading(false);
+            
+            // Initial Paint: Auto-organize only once on first successful load
+            if (!initialLayoutPerformed.current && data.nodes?.length > 0) {
+              applyAutoLayout(data.nodes, data.edges);
+              initialLayoutPerformed.current = true;
+            }
+        })
+        .catch(e => {
+            setError(e.message);
+            setIsLoading(false);
+        });
+    };
+
+    loadData();
+    const timer = setInterval(loadData, 5000); // Poll every 5s
+    return () => clearInterval(timer);
+  }, []);
+
+  // Removed automatic layout useEffect to prevent constant reorganization.
+  // Layout is now triggered manually via applyAutoLayout() or on initial paint.
+
+  /* ── Node Handling ────────────────────────────────────────────── */
+  const handleNodeClick = useCallback((nodeId, e) => {
+    // Suppress if the last action was a significant drag
+    if (wasDragging.current) return;
     setFocusedNodeId(nodeId);
   }, []);
+
+  const handleNodeDoubleClick = useCallback((nodeId, e) => {
+    if (wasDragging.current) return;
+    setExpandedNodeId(prev => prev === nodeId ? null : nodeId);
+  }, []);
+
+  const handleNodeMouseDown = useCallback((nodeId, e) => {
+    e.stopPropagation();
+    const node = layoutedNodes[nodeId];
+    if (!node) return;
+
+    // Calculate canvas-space mouse position
+    const canvasX = (e.clientX - panOffset.x) / zoom;
+    const canvasY = (e.clientY - panOffset.y) / zoom;
+
+    setDraggedNodeId(nodeId);
+    dragStartCoords.current = { x: e.clientX, y: e.clientY };
+    wasDragging.current = false; // Reset on every start
+    setDragOffset({
+      x: canvasX - node.x,
+      y: canvasY - node.y
+    });
+    setFocusedNodeId(nodeId);
+  }, [layoutedNodes, panOffset, zoom]);
+
+  // Global mouse listeners for dragging
+  useEffect(() => {
+    if (!draggedNodeId) return;
+
+    const handleMouseMove = (e) => {
+      const canvasX = (e.clientX - panOffset.x) / zoom;
+      const canvasY = (e.clientY - panOffset.y) / zoom;
+
+      const absoluteX = canvasX - dragOffset.x;
+      const absoluteY = canvasY - dragOffset.y;
+
+      // Determine if this movement counts as a drag
+      const dist = Math.sqrt(
+        Math.pow(e.clientX - dragStartCoords.current.x, 2) + 
+        Math.pow(e.clientY - dragStartCoords.current.y, 2)
+      );
+      if (dist > 5) wasDragging.current = true;
+
+      // Free Drag: No snapping during move
+      setLayoutedNodes(prev => ({
+        ...prev,
+        [draggedNodeId]: {
+          ...prev[draggedNodeId],
+          x: absoluteX,
+          y: absoluteY
+        }
+      }));
+    };
+
+    const handleMouseUp = () => {
+      // Snap-on-Drop: Apply grid snapping only when released
+      setLayoutedNodes(prev => {
+        if (!draggedNodeId || !prev[draggedNodeId]) return prev;
+        const node = prev[draggedNodeId];
+        return {
+          ...prev,
+          [draggedNodeId]: {
+            ...node,
+            x: Math.round(node.x / 20) * 20,
+            y: Math.round(node.y / 20) * 20
+          }
+        };
+      });
+      setDraggedNodeId(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [draggedNodeId, dragOffset, panOffset, zoom]);
 
   /* ── God mode select → pan + focus ───────────────────────────── */
   const handleGodModeSelect = useCallback((nodeId) => {
@@ -128,11 +224,11 @@ export default function App() {
 
     const viewW = window.innerWidth;
     const viewH = window.innerHeight;
-    const centerX = -(layout.x + layout.w / 2) + viewW / 2;
-    const centerY = -(layout.y + layout.h / 2) + viewH / 2;
+    const centerX = -(layout.x * zoom + (layout.w * zoom) / 2) + viewW / 2;
+    const centerY = -(layout.y * zoom + (layout.h * zoom) / 2) + viewH / 2;
 
     setPanOffset({ x: centerX, y: centerY });
-  }, [layoutedNodes]);
+  }, [layoutedNodes, zoom]);
 
   /* ── Clear focus ─────────────────────────────────────────────── */
   const clearFocus = useCallback(() => {
@@ -165,6 +261,18 @@ export default function App() {
     setRawData(prev => ({
       ...prev,
       nodes: [...prev.nodes, newNode]
+    }));
+
+    setLayoutedNodes(prev => ({
+      ...prev,
+      [newId]: {
+        x: 800, 
+        y: 100, 
+        w: 120,
+        h: 60,
+        node: newNode,
+        isRegion: false
+      }
     }));
 
     try {
@@ -379,6 +487,27 @@ export default function App() {
             <span>Draft</span>
             <span style={{ fontSize: 9 }}>{isPlanningMode ? 'ON' : 'OFF'}</span>
           </button>
+
+          <div className="w-px h-4 mx-1" style={{ background: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
+
+          {/* Organize Button */}
+          <button
+            onClick={(e) => { e.stopPropagation(); applyAutoLayout(); }}
+            className="flex items-center gap-2 px-3 h-8 rounded-md cursor-pointer border-0 text-xs font-semibold"
+            style={{
+              background: theme === 'dark' ? 'rgba(52,199,89,0.15)' : 'rgba(52,199,89,0.1)',
+              color: '#34C759',
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = theme === 'dark' ? 'rgba(52,199,89,0.25)' : 'rgba(52,199,89,0.15)';
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = theme === 'dark' ? 'rgba(52,199,89,0.15)' : 'rgba(52,199,89,0.1)';
+            }}
+          >
+            <span>Organize Graph</span>
+          </button>
       </div>
 
       {/* ── Canvas ───────────────────────────────────────────────────── */}
@@ -386,6 +515,8 @@ export default function App() {
         canvasSize={layoutedCanvasSize}
         panOffset={panOffset}
         onPan={setPanOffset}
+        zoom={zoom}
+        onZoomChange={setZoom}
         theme={theme}
       >
         {/* Flow connectors (curved paths) */}
@@ -410,7 +541,10 @@ export default function App() {
               dimmed={isDimmed}
               focused={isFocused}
               theme={theme}
+              isDragging={draggedNodeId === id}
               onNodeClick={handleNodeClick}
+              onNodeDoubleClick={handleNodeDoubleClick}
+              onNodeMouseDown={handleNodeMouseDown}
               onGodModeSelect={handleGodModeSelect}
               expandedNodeId={expandedNodeId}
             />

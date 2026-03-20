@@ -13,7 +13,7 @@ Nodes carry:
 from __future__ import annotations
 
 from datetime import datetime
-from enum import StrEnum
+from enum import Enum
 from typing import Optional, Any
 
 from pydantic import BaseModel, Field
@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 # ── Enums ────────────────────────────────────────────────────────────
 
-class CICDEventStatus(StrEnum):
+class CICDEventStatus(str, Enum):
     """Possible statuses for a CI/CD pipeline event."""
 
     SUCCESS = "success"
@@ -29,7 +29,7 @@ class CICDEventStatus(StrEnum):
     IN_PROGRESS = "in_progress"
 
 
-class NodeStatus(StrEnum):
+class NodeStatus(str, Enum):
     """Lifecycle status of a Node in the infrastructure graph."""
 
     LIVE = "live"

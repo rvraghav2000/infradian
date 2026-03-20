@@ -26,8 +26,11 @@ export default function InfraNode({
     focused = false,
     theme = 'light',
     onNodeClick,
+    onNodeDoubleClick,
+    onNodeMouseDown,
     onGodModeSelect,
     expandedNodeId,
+    isDragging = false,
 }) {
     const [hovered, setHovered] = useState(false);
     const { node } = nodeLayout;
@@ -35,7 +38,7 @@ export default function InfraNode({
     const meta = getCategoryMeta(node.type);
 
     if (nodeLayout.isRegion) {
-        return <RegionNode layout={nodeLayout} meta={meta} dimmed={dimmed} focused={focused} theme={theme} />;
+        return <RegionNode layout={nodeLayout} meta={meta} dimmed={dimmed} focused={focused} theme={theme} onNodeMouseDown={onNodeMouseDown} isDragging={isDragging} />;
     }
 
     const isExpanded = expandedNodeId === node.id;
@@ -45,22 +48,26 @@ export default function InfraNode({
             layout={nodeLayout} meta={meta} lp={lp}
             hovered={hovered} setHovered={setHovered}
             dimmed={dimmed} focused={focused} theme={theme}
-            onNodeClick={onNodeClick} isExpanded={isExpanded}
-            onGodModeSelect={onGodModeSelect}
+            onNodeClick={onNodeClick} 
+            onNodeDoubleClick={onNodeDoubleClick}
+            onNodeMouseDown={onNodeMouseDown} 
+            isExpanded={isExpanded}
+            onGodModeSelect={onGodModeSelect} isDragging={isDragging}
         />
     );
 }
 
 /* ── Region (VPC / Subnet) — Dotted boundary ──────────────────── */
 
-function RegionNode({ layout, meta, dimmed, focused, theme }) {
+function RegionNode({ layout, meta, dimmed, focused, theme, onNodeMouseDown, isDragging }) {
     const { x, y, w, h, node } = layout;
     const isVPC = node.type === 'aws_vpc';
     const isDark = theme === 'dark';
 
     return (
         <motion.div
-            className="node-region absolute"
+            className="node-region absolute cursor-grab active:cursor-grabbing"
+            onMouseDown={(e) => onNodeMouseDown && onNodeMouseDown(node.id, e)}
             initial={{ opacity: 0 }}
             animate={{
                 opacity: dimmed ? 0.2 : 1,
@@ -68,10 +75,11 @@ function RegionNode({ layout, meta, dimmed, focused, theme }) {
             }}
             transition={{ duration: 0.4 }}
             style={{
-                left: x, top: y,
+                transform: `translate3d(${x}px, ${y}px, 0)`,
                 width: Math.round(w),
                 height: Math.round(h),
                 position: 'absolute',
+                transition: isDragging ? 'none' : 'transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.15)',
                 border: focused
                     ? '2px solid #007AFF'
                     : `1.5px dashed ${isVPC 
@@ -81,7 +89,7 @@ function RegionNode({ layout, meta, dimmed, focused, theme }) {
                 background: isVPC 
                     ? (isDark ? 'rgba(10,132,255,0.03)' : 'rgba(0,122,255,0.02)') 
                     : (isDark ? 'rgba(94,92,230,0.03)' : 'rgba(88,86,214,0.02)'),
-                pointerEvents: 'none',
+                pointerEvents: 'auto',
                 backfaceVisibility: 'hidden',
                 transformStyle: 'preserve-3d',
                 willChange: 'transform, width, height',
@@ -109,7 +117,7 @@ function RegionNode({ layout, meta, dimmed, focused, theme }) {
 
 function CardNode({
     layout, meta, lp, hovered, setHovered,
-    dimmed, focused, theme, onNodeClick, onGodModeSelect, isExpanded,
+    dimmed, focused, theme, onNodeClick, onNodeDoubleClick, onNodeMouseDown, onGodModeSelect, isExpanded, isDragging,
 }) {
     const { x, y, w, h, node } = layout;
     const events = node.history || [];
@@ -119,7 +127,8 @@ function CardNode({
 
     return (
         <motion.div
-            className={`node-card absolute ${isPlanned ? 'ghost-socket' : ''}`}
+            className={`node-card absolute ${isPlanned ? 'ghost-socket' : ''} cursor-grab active:cursor-grabbing`}
+            onMouseDown={(e) => onNodeMouseDown && onNodeMouseDown(node.id, e)}
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{
                 opacity: dimmed ? 0.12 : (isPlanned ? undefined : 1), // Let CSS handle planned opacity
@@ -130,17 +139,18 @@ function CardNode({
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}
             style={{
-                left: x, top: y,
+                transform: `translate3d(${x}px, ${y}px, 0)`,
                 width: isExpanded ? 320 : w,
                 position: 'absolute',
                 zIndex: isExpanded ? 100 : hovered ? 50 : 10,
-                transition: 'width 0.3s ease',
+                transition: isDragging ? 'none' : 'transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.15), width 0.3s ease',
             }}
         >
             {/* ── Compact card (always visible) ─────────────────────────── */}
             <div
                 className="rounded-xl flex items-center gap-3 px-3 select-none cursor-pointer"
-                onClick={(e) => { e.stopPropagation(); onNodeClick && onNodeClick(node.id); }}
+                onClick={(e) => { e.stopPropagation(); onNodeClick && onNodeClick(node.id, e); }}
+                onDoubleClick={(e) => { e.stopPropagation(); onNodeDoubleClick && onNodeDoubleClick(node.id, e); }}
                 style={{
                     height: h,
                     background: isPlanned ? 'rgba(0,122,255,0.05)' : (isDark ? 'rgba(44,44,46,0.75)' : 'rgba(255,255,255,0.88)'),
@@ -234,7 +244,7 @@ function CardNode({
                             label="Pipelines"
                             count={events.length}
                             isDark={isDark}
-                            onClick={(e) => { e.stopPropagation(); onNodeClick && onNodeClick(node.id); }}
+                            onClick={(e) => { e.stopPropagation(); onNodeClick && onNodeClick(node.id, e); }}
                         />
                         <ActionButton
                             icon="📊"
@@ -246,7 +256,7 @@ function CardNode({
                             icon="⚙️"
                             label="Config"
                             isDark={isDark}
-                            onClick={(e) => { e.stopPropagation(); onGodModeSelect && onGodModeSelect(node.id); }}
+                            onClick={(e) => { e.stopPropagation(); onGodModeSelect && onGodModeSelect(node.id, e); }}
                         />
                     </motion.div>
                 )}
@@ -278,7 +288,7 @@ function CardNode({
                                 CI/CD Pipeline
                             </span>
                             <button
-                                onClick={(e) => { e.stopPropagation(); onNodeClick && onNodeClick(null); }}
+                                onClick={(e) => { e.stopPropagation(); onNodeClick && onNodeClick(null, e); }}
                                 className="text-[10px] cursor-pointer bg-transparent border-0 font-medium"
                                 style={{ color: isDark ? '#636366' : '#aeaeb2' }}
                             >

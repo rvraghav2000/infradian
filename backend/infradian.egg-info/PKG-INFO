@@ -1,0 +1,9 @@
+Metadata-Version: 2.4
+Name: infradian
+Version: 0.1.0
+Summary: Executive Control Room for cloud infrastructure — 2.5D isometric visualizer.
+Requires-Python: >=3.11
+Requires-Dist: fastapi<1.0,>=0.110
+Requires-Dist: uvicorn[standard]<1.0,>=0.29
+Requires-Dist: pydantic<3.0,>=2.6
+Requires-Dist: typer<1.0,>=0.12

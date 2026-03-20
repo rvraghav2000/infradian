@@ -1,0 +1,2 @@
+[console_scripts]
+infradian = app.cli:main

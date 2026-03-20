@@ -20,7 +20,7 @@ const ZOOM_MAX = 2.5;
 const ZOOM_STEP = 0.04;      // per scroll tick when Cmd held
 const ZOOM_FRICTION = 0.85;
 
-export default function InfraCanvas({ children, canvasSize, panOffset, onPan, theme = 'light' }) {
+export default function InfraCanvas({ children, canvasSize, panOffset, onPan, zoom, onZoomChange, theme = 'light' }) {
     const viewportRef = useRef(null);
     const surfaceRef = useRef(null);
 
@@ -31,11 +31,16 @@ export default function InfraCanvas({ children, canvasSize, panOffset, onPan, th
     const isActive = useRef(false);
     const frameCount = useRef(0);
 
-    // Zoom (React state for re-render, but also ref for rAF)
-    const [zoom, setZoom] = useState(1);
-    const zoomRef = useRef(1);
-    const zoomVel = useRef(0);
-    const targetZoom = useRef(1);
+    // Zoom (Sync with external zoom)
+    const zoomRef = useRef(zoom);
+    const targetZoom = useRef(zoom);
+
+    useEffect(() => {
+        if (Math.abs(zoom - zoomRef.current) > 0.01) {
+            targetZoom.current = zoom;
+            startLoop();
+        }
+    }, [zoom]);
 
     // Dragging
     const [isDragging, setIsDragging] = useState(false);
@@ -101,7 +106,7 @@ export default function InfraCanvas({ children, canvasSize, panOffset, onPan, th
             frameCount.current++;
             if (frameCount.current % 3 === 0) {
                 onPan(() => ({ x: p.x, y: p.y }));
-                setZoom(zoomRef.current);
+                onZoomChange(zoomRef.current);
             }
         }
 
@@ -115,7 +120,7 @@ export default function InfraCanvas({ children, canvasSize, panOffset, onPan, th
             isActive.current = false;
             if (needsUpdate) {
                 onPan(() => ({ x: p.x, y: p.y }));
-                setZoom(zoomRef.current);
+                onZoomChange(zoomRef.current);
             }
         }
     }, [onPan, panOffset]);
@@ -270,7 +275,7 @@ export default function InfraCanvas({ children, canvasSize, panOffset, onPan, th
     const minimapScale = 0.08;
     const viewportW = typeof window !== 'undefined' ? window.innerWidth : 1440;
     const viewportH = typeof window !== 'undefined' ? window.innerHeight : 720;
-    const zoomPct = Math.round(zoomRef.current * 100);
+    const zoomPct = Math.round(zoom * 100);
     const isDark = theme === 'dark';
 
     return (
