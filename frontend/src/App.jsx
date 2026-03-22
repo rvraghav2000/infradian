@@ -1,15 +1,17 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import InfraCanvas from './components/IsometricCanvas';
-import InfraNode from './components/InfraNode';
-import FlowConnectors from './components/EdgeLines';
+import CytoscapeCanvas from './components/CytoscapeCanvas';
 import CommandPalette from './components/CommandPalette';
 import HistoryStack from './components/HistoryStack';
 import NodeDetailsModal from './components/NodeDetailsModal';
-import { computeLayout, NODE_CATEGORIES } from './layout';
+import InfraNode from './components/InfraNode';
+import PlanningPanel from './components/PlanningPanel';
+import { NODE_CATEGORIES } from './layout';
+
 
 const PALETTE_ITEMS = [
   'aws_instance', 'aws_rds', 'aws_s3', 'aws_elasticache', 'aws_lambda', 'aws_alb', 'aws_vpc', 'aws_subnet'
 ];
+
 
 /* ── Blast radius ──────────────────────────────────────────────── */
 
@@ -54,51 +56,25 @@ export default function App() {
   const [rawData, setRawData] = useState({ nodes: [], edges: [] });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [layoutedNodes, setLayoutedNodes] = useState({});
-  const [layoutedEdges, setLayoutedEdges] = useState([]);
-  const [layoutedCanvasSize, setLayoutedCanvasSize] = useState({ width: 1440, height: 720 });
-  const [zoom, setZoom] = useState(1);
   
+  const [layoutTrigger, setLayoutTrigger] = useState(0);
+
   const [cmdKOpen, setCmdKOpen] = useState(false);
   const [focusedNodeId, setFocusedNodeId] = useState(null);
   const [expandedNodeId, setExpandedNodeId] = useState(null);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [hoveredEdgeId, setHoveredEdgeId] = useState(null);
+  const [hoveredNodeId, setHoveredNodeId] = useState(null);
   const [theme, setTheme] = useState('light');
   const [isPlanningMode, setIsPlanningMode] = useState(false);
   const initialLayoutPerformed = useRef(false);
 
-  // Drag state
-  const [draggedNodeId, setDraggedNodeId] = useState(null);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const dragStartCoords = useRef({ x: 0, y: 0 });
-  const wasDragging = useRef(false);
 
   /* ── Layout Logic (Dagre Integration) ────────────────────────── */
-  const applyAutoLayout = useCallback((nodes = rawData.nodes, edges = rawData.edges, planningMode = isPlanningMode) => {
-    if (!nodes || nodes.length === 0) return;
-
-    const displayNodes = planningMode 
-        ? nodes 
-        : nodes.filter(n => n.status !== 'planned');
-
-    const regionTypes = new Set(['aws_vpc', 'aws_subnet']);
-    const nodeMap = new Map(displayNodes.map(n => [n.id, n]));
-    
-    const visualEdges = (edges || []).filter(e => {
-        const src = nodeMap.get(e.source_id);
-        const tgt = nodeMap.get(e.target_id);
-        if (!src || !tgt) return false;
-        if (regionTypes.has(src.type) || regionTypes.has(tgt.type)) return false;
-        return true;
-    });
-
-    const layoutObj = computeLayout(displayNodes, visualEdges);
-    
-    setLayoutedNodes(layoutObj.layoutNodes);
-    setLayoutedEdges(visualEdges);
-    setLayoutedCanvasSize(layoutObj.canvasSize);
-  }, [rawData.nodes, rawData.edges, isPlanningMode]);
+  /* ── Layout Logic (Native Cytoscape Trigger) ─────────────────── */
+  const applyAutoLayout = useCallback(() => {
+    setLayoutTrigger(prev => prev + 1);
+  }, []);
 
   /* ── Fetch ────────────────────────────────────────────────────── */
   useEffect(() => {
@@ -111,7 +87,7 @@ export default function App() {
             
             // Initial Paint: Auto-organize only once on first successful load
             if (!initialLayoutPerformed.current && data.nodes?.length > 0) {
-              applyAutoLayout(data.nodes, data.edges);
+              applyAutoLayout();
               initialLayoutPerformed.current = true;
             }
         })
@@ -131,104 +107,19 @@ export default function App() {
 
   /* ── Node Handling ────────────────────────────────────────────── */
   const handleNodeClick = useCallback((nodeId, e) => {
-    // Suppress if the last action was a significant drag
-    if (wasDragging.current) return;
+    // Single click now handles both focus and expansion
     setFocusedNodeId(nodeId);
-  }, []);
-
-  const handleNodeDoubleClick = useCallback((nodeId, e) => {
-    if (wasDragging.current) return;
     setExpandedNodeId(prev => prev === nodeId ? null : nodeId);
   }, []);
-
-  const handleNodeMouseDown = useCallback((nodeId, e) => {
-    e.stopPropagation();
-    const node = layoutedNodes[nodeId];
-    if (!node) return;
-
-    // Calculate canvas-space mouse position
-    const canvasX = (e.clientX - panOffset.x) / zoom;
-    const canvasY = (e.clientY - panOffset.y) / zoom;
-
-    setDraggedNodeId(nodeId);
-    dragStartCoords.current = { x: e.clientX, y: e.clientY };
-    wasDragging.current = false; // Reset on every start
-    setDragOffset({
-      x: canvasX - node.x,
-      y: canvasY - node.y
-    });
-    setFocusedNodeId(nodeId);
-  }, [layoutedNodes, panOffset, zoom]);
-
-  // Global mouse listeners for dragging
-  useEffect(() => {
-    if (!draggedNodeId) return;
-
-    const handleMouseMove = (e) => {
-      const canvasX = (e.clientX - panOffset.x) / zoom;
-      const canvasY = (e.clientY - panOffset.y) / zoom;
-
-      const absoluteX = canvasX - dragOffset.x;
-      const absoluteY = canvasY - dragOffset.y;
-
-      // Determine if this movement counts as a drag
-      const dist = Math.sqrt(
-        Math.pow(e.clientX - dragStartCoords.current.x, 2) + 
-        Math.pow(e.clientY - dragStartCoords.current.y, 2)
-      );
-      if (dist > 5) wasDragging.current = true;
-
-      // Free Drag: No snapping during move
-      setLayoutedNodes(prev => ({
-        ...prev,
-        [draggedNodeId]: {
-          ...prev[draggedNodeId],
-          x: absoluteX,
-          y: absoluteY
-        }
-      }));
-    };
-
-    const handleMouseUp = () => {
-      // Snap-on-Drop: Apply grid snapping only when released
-      setLayoutedNodes(prev => {
-        if (!draggedNodeId || !prev[draggedNodeId]) return prev;
-        const node = prev[draggedNodeId];
-        return {
-          ...prev,
-          [draggedNodeId]: {
-            ...node,
-            x: Math.round(node.x / 20) * 20,
-            y: Math.round(node.y / 20) * 20
-          }
-        };
-      });
-      setDraggedNodeId(null);
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [draggedNodeId, dragOffset, panOffset, zoom]);
 
   /* ── God mode select → pan + focus ───────────────────────────── */
   const handleGodModeSelect = useCallback((nodeId) => {
     setFocusedNodeId(nodeId);
     setExpandedNodeId(null);
-
-    const layout = layoutedNodes[nodeId];
-    if (!layout) return;
-
-    const viewW = window.innerWidth;
-    const viewH = window.innerHeight;
-    const centerX = -(layout.x * zoom + (layout.w * zoom) / 2) + viewW / 2;
-    const centerY = -(layout.y * zoom + (layout.h * zoom) / 2) + viewH / 2;
-
-    setPanOffset({ x: centerX, y: centerY });
-  }, [layoutedNodes, zoom]);
+    setCmdKOpen(false);
+    // Note: To pan precisely, we would need to ask Cytoscape for the node's position.
+    // For now, selecting it simply focuses the node details without panning the canvas natively.
+  }, []);
 
   /* ── Clear focus ─────────────────────────────────────────────── */
   const clearFocus = useCallback(() => {
@@ -243,7 +134,35 @@ export default function App() {
     return computeBlastRadius(focusedNodeId, rawData.nodes, rawData.edges, hoveredEdgeId);
   }, [focusedNodeId, rawData, hoveredEdgeId]);
 
-  /* ── Drag & Drop ─────────────────────────────────────────────── */
+  /* ── Node Drop from PlanningPanel (graph-space coords) ───────── */
+  const handleNodeDrop = useCallback(async (primitiveData, graphX, graphY) => {
+    const newId = `planned-${primitiveData.type.replace(/_/g, '-')}-${Math.floor(Math.random() * 10000)}`;
+    const newNode = {
+      ...primitiveData,
+      id: newId,
+      label: primitiveData.label || primitiveData.type,
+      parentId: null,
+      attributes: {
+        spawnX: graphX,
+        spawnY: graphY,
+      },
+    };
+
+    setRawData(prev => ({
+      ...prev,
+      nodes: [...prev.nodes, newNode]
+    }));
+
+    try {
+      await fetch('/api/v1/nodes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newNode)
+      });
+    } catch(e) { console.error('Could not persist dropped node', e); }
+  }, []);
+
+  /* ── Drop Node (legacy — type-only drop from outer onDrop) ──── */
   const handleDropToCanvas = useCallback(async (type) => {
     // Determine target parent if any. For simplicity, drop as top-level orphan for now
     const newId = `planned-${type.replace(/_/g, '-')}-${Math.floor(Math.random()*1000)}`;
@@ -255,24 +174,15 @@ export default function App() {
       status: 'live',
       metrics: { current_load: 0 },
       history: [],
-      attributes: {}
+      attributes: {
+        spawnX: Math.random() * 200 + 400,
+        spawnY: Math.random() * 200 + 100
+      }
     };
 
     setRawData(prev => ({
       ...prev,
       nodes: [...prev.nodes, newNode]
-    }));
-
-    setLayoutedNodes(prev => ({
-      ...prev,
-      [newId]: {
-        x: 800, 
-        y: 100, 
-        w: 120,
-        h: 60,
-        node: newNode,
-        isRegion: false
-      }
     }));
 
     try {
@@ -353,14 +263,7 @@ export default function App() {
     );
   }
 
-  // Sort nodes: regions first (as background), then cards on top
-  const sortedLayoutIds = Object.keys(layoutedNodes).sort((a, b) => {
-    const la = layoutedNodes[a];
-    const lb = layoutedNodes[b];
-    if (la.isRegion && !lb.isRegion) return -1;
-    if (!la.isRegion && lb.isRegion) return 1;
-    return 0;
-  });
+  // Removed sortedLayoutIds processing as Cytoscape strictly governs rendering now
 
   return (
     <div
@@ -386,7 +289,7 @@ export default function App() {
     >
       {/* ── Global Actions (Top Right) ───────────────────────────────── */}
       <div 
-        className="fixed top-7 right-44 z-50 flex items-center gap-1.5 px-2 py-1.5 rounded-xl"
+        className="fixed top-7 right-44 z-[60] flex items-center gap-1.5 px-2 py-1.5 rounded-xl"
         style={{
           background: theme === 'dark' ? 'rgba(30,30,32,0.85)' : 'rgba(255,255,255,0.85)',
           backdropFilter: 'blur(12px)',
@@ -510,51 +413,130 @@ export default function App() {
           </button>
       </div>
 
-      {/* ── Canvas ───────────────────────────────────────────────────── */}
-      <InfraCanvas
-        canvasSize={layoutedCanvasSize}
-        panOffset={panOffset}
-        onPan={setPanOffset}
-        zoom={zoom}
-        onZoomChange={setZoom}
-        theme={theme}
-      >
-        {/* Flow connectors (curved paths) */}
-        <FlowConnectors 
-          edges={layoutedEdges} 
-          layoutNodes={layoutedNodes} 
-          blastRadius={blastRadius}
-          hoveredEdgeId={hoveredEdgeId}
-          onEdgeHover={setHoveredEdgeId}
+      {/* HUD & Legend overlays restored from IsometricCanvas */}
+      <div className="fixed top-7 left-9 z-[60] select-none pointer-events-none">
+          <h1 className="text-[22px] font-semibold" style={{ color: theme === 'dark' ? '#fff' : '#1d1d1f', letterSpacing: '-0.02em' }}>
+              Infradian
+          </h1>
+          <p className="text-[11px] mt-0.5" style={{ color: theme === 'dark' ? '#aeaeb2' : '#86868b', fontWeight: 500 }}>
+              Infrastructure Map
+          </p>
+          <p className="text-[10px] mt-1" style={{ color: theme === 'dark' ? '#636366' : '#aeaeb2' }}>
+              ⌘K Search · Click to select · Drag to organize · Scroll to zoom
+          </p>
+      </div>
+
+      <div className="fixed bottom-7 right-9 z-50 select-none flex gap-5 text-[10px]" style={{ color: '#86868b', fontWeight: 500 }}>
+          <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full" style={{ background: '#34C759' }} /> Live
+          </span>
+          <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full" style={{ background: '#FF9500' }} /> Pending
+          </span>
+          <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full" style={{ background: '#FF3B30' }} /> Offline
+          </span>
+      </div>
+
+      {/* Dynamic Grid Background */}
+      <div 
+          style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundImage: `
+                  linear-gradient(${theme === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)'} 1px, transparent 1px),
+                  linear-gradient(90deg, ${theme === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)'} 1px, transparent 1px)
+              `,
+              backgroundSize: '40px 40px',
+              pointerEvents: 'none',
+              zIndex: 0,
+              transition: 'background-image 0.5s ease',
+          }} 
+      />
+
+      {/* ── Top Chrome Mesh ─────────────────────────────────────────────
+          Frosted glass gradient that feathers from the top down.
+          Sits ABOVE the planning sidebar (z-45) so sidebar items scroll
+          behind it, but BELOW the logo + toolbar (z-60) so they remain
+          fully readable. The mask-image gradient creates the diffused
+          'fading outward' effect — solid blur at top, fading to transparent.
+      ─────────────────────────────────────────────────────────────────── */}
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 110,
+          zIndex: 55,
+          pointerEvents: 'none',
+          background: theme === 'dark'
+            ? 'linear-gradient(to bottom, rgba(28,28,30,0.88) 0%, rgba(28,28,30,0.6) 55%, rgba(28,28,30,0) 100%)'
+            : 'linear-gradient(to bottom, rgba(245,245,247,0.9) 0%, rgba(245,245,247,0.6) 55%, rgba(245,245,247,0) 100%)',
+          backdropFilter: 'blur(18px) saturate(1.6)',
+          WebkitBackdropFilter: 'blur(18px) saturate(1.6)',
+          // Mask fades the blur effect itself — solid blur at top, dissolves to nothing
+          maskImage: 'linear-gradient(to bottom, black 40%, transparent 100%)',
+          WebkitMaskImage: 'linear-gradient(to bottom, black 40%, transparent 100%)',
+          transition: 'background 0.5s ease',
+        }}
+      />
+
+      <div className="w-full h-full relative z-0">
+        <CytoscapeCanvas 
+          graphData={rawData}
+          layoutTrigger={layoutTrigger}
+          onNodeClick={(id) => setFocusedNodeId(id)}
+          onNodeDoubleClick={(id) => handleNodeClick(id)}
+          onCanvasClick={() => clearFocus()}
+          onNodeHover={setHoveredNodeId}
+          onNodeDrop={handleNodeDrop}
+          theme={theme}
         />
 
-        {/* Nodes */}
-        {sortedLayoutIds.map(id => {
-          const nl = layoutedNodes[id];
-          const isDimmed = blastRadius !== null && !blastRadius.has(id);
-          const isFocused = focusedNodeId === id;
-
-          return (
-            <InfraNode
-              key={id}
-              nodeLayout={nl}
-              dimmed={isDimmed}
-              focused={isFocused}
-              theme={theme}
-              isDragging={draggedNodeId === id}
-              onNodeClick={handleNodeClick}
-              onNodeDoubleClick={handleNodeDoubleClick}
-              onNodeMouseDown={handleNodeMouseDown}
-              onGodModeSelect={handleGodModeSelect}
-              expandedNodeId={expandedNodeId}
-            />
-          );
-        })}
-      </InfraCanvas>
+        
+          {/* DOM Overlays managed by Cytoscape WebGL physics */}
+        <div className="absolute inset-0 pointer-events-none z-10" style={{ transformOrigin: '0 0' }}>
+           {rawData.nodes.map(node => {
+             const isRegion = ['aws_vpc', 'aws_subnet'].includes(node.type);
+             return (
+               <div 
+                 id={`infranode-${node.id}`} 
+                 key={node.id} 
+                 className="absolute top-0 left-0"
+                 style={{ 
+                   willChange: 'transform',
+                   transform: 'translate(-50%, -50%) translate3d(-9999px, -9999px, 0)',
+                   // Region nodes need explicit dimensions so their children can use width: 100%
+                   ...(isRegion ? {
+                     width: 'var(--region-w, 200px)',
+                     height: 'var(--region-h, 100px)',
+                   } : {})
+                 }}
+               >
+                 <InfraNode 
+                   nodeLayout={{ 
+                     node, 
+                     x: 0, y: 0, w: 220, h: 60,
+                     isRegion
+                   }}
+                   focused={focusedNodeId === node.id}
+                   expandedNodeId={expandedNodeId}
+                   theme={theme}
+                   onNodeClick={handleNodeClick}
+                   onNodeDoubleClick={handleNodeClick}
+                   onGodModeSelect={handleGodModeSelect}
+                   physicsHovered={hoveredNodeId === node.id}
+                 />
+               </div>
+             );
+           })}
+        </div>
+      </div>
 
       {/* Node Details Modal */}
       <NodeDetailsModal 
-        nodeLayout={focusedNodeId ? layoutedNodes[focusedNodeId] : null} 
+        nodeLayout={focusedNodeId && rawData.nodes.find(n => n.id === focusedNodeId) ? { node: rawData.nodes.find(n => n.id === focusedNodeId), w: 300 } : null} 
         onClose={clearFocus}
         onDelete={handleDeleteNode}
         theme={theme}
@@ -596,41 +578,9 @@ export default function App() {
         onSelect={handleGodModeSelect}
       />
 
-      {/* Tech Palette Toolbar */}
+      {/* Planning Mode Sidebar */}
       {isPlanningMode && (
-        <div 
-          className="fixed left-8 top-1/2 -translate-y-1/2 z-50 flex flex-col gap-3 p-3 rounded-2xl"
-          style={{
-            background: theme === 'dark' ? 'rgba(30,30,32,0.85)' : 'rgba(255,255,255,0.85)',
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
-            border: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-            boxShadow: theme === 'dark' ? '0 8px 32px rgba(0,0,0,0.5)' : '0 8px 32px rgba(0,0,0,0.08)'
-          }}
-        >
-          {PALETTE_ITEMS.map(type => {
-            const meta = NODE_CATEGORIES[type] || { icon: '?', color: '#ccc' };
-            return (
-              <div
-                key={type}
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData('application/infradian-node', type);
-                  e.dataTransfer.effectAllowed = 'copy';
-                }}
-                className="w-12 h-12 flex items-center justify-center rounded-xl cursor-grab active:cursor-grabbing hover:scale-110 transition-transform"
-                title={`Drag to add ${meta.label}`}
-                style={{ 
-                  background: `${meta.color}15`, 
-                  border: `1px solid ${meta.color}30`,
-                  fontSize: 20
-                }}
-              >
-                {meta.icon}
-              </div>
-            );
-          })}
-        </div>
+        <PlanningPanel theme={theme} />
       )}
     </div>
   );

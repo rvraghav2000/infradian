@@ -17,7 +17,8 @@ from fastapi import FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .models import InfraGraph, Node
+import traceback
+from .models import InfraGraph, Node, Edge
 from .database import db
 
 app = FastAPI(
@@ -55,75 +56,128 @@ SAMPLE_PATH = Path(__file__).resolve().parent.parent / "sample_payload.json"
 
 INFRADIAN_SERVER_TOKEN = "dev-token-123"
 
+def flatten_dict(d: dict, prefix: str = "") -> dict:
+    """Helper to flatten nested dictionaries for Neo4j compatibility."""
+    items = {}
+    for k, v in d.items():
+        new_key = f"{prefix}_{k}" if prefix else k
+        if isinstance(v, dict):
+            items.update(flatten_dict(v, new_key))
+        else:
+            items[new_key] = v
+    return items
+
 
 # ── Versioned API ────────────────────────────────────────────────
 
 @app.get("/api/v1/graph")
-async def get_graph() -> JSONResponse:
-    """Return the infrastructure graph from Neo4j."""
-    nodes_query = "MATCH (n:Resource) RETURN n"
-    edges_query = "MATCH (a:Resource)-[r:DEPENDS_ON]->(b:Resource) RETURN a.id as source_id, b.id as target_id, r.label as label"
-    
-    nodes_raw = db.query(nodes_query) or []
-    edges_raw = db.query(edges_query) or []
-    
-    nodes = []
-    for record in nodes_raw:
-        n = record["n"]
-        # Map Neo4j properties back to Pydantic model
-        nodes.append({
-            "id": n["id"],
-            "type": n["type"],
-            "label": n.get("name") or n.get("label") or "Unnamed Node",
-            "status": n["status"],
-            "parentId": n.get("parent_id"),
-            "metrics": {"current_load": n.get("current_load", 0.0)},
-            "history": [] # TODO: Implement history persistence in Neo4j if needed
-        })
+async def get_graph() -> dict:
+    """Return the entire graph formatted for Cytoscape.js."""
+    try:
+        # 1. Fetch all nodes with their properties explicitly as dicts
+        nodes_query = "MATCH (n:Resource) RETURN properties(n) as props"
+        nodes_raw = db.query(nodes_query) or []
         
-    edges = []
-    for edge in edges_raw:
-        edges.append({
-            "source_id": edge["source_id"],
-            "target_id": edge["target_id"],
-            "label": edge.get("label")
-        })
+        nodes = []
+        for record in nodes_raw:
+            # record is a dict: {"props": {id, name, parent_id, ...}}
+            props = record.get("props", {})
+            node_id = props.get("id")
+            if not node_id:
+                continue
+                
+            nodes.append({
+                "data": {
+                    "id": node_id,
+                    "label": props.get("name") or props.get("label") or node_id,
+                    "parent": props.get("parent_id")
+                }
+            })
+            
+        # 2. Fetch all relationships with their type and properties
+        edges_query = "MATCH (a:Resource)-[r]->(b:Resource) RETURN properties(r) as props, type(r) as rel_type, a.id as source, b.id as target"
+        edges_raw = db.query(edges_query) or []
+        
+        edges = []
+        for record in edges_raw:
+            props = record.get("props", {})
+            rel_type = record.get("rel_type", "DEPENDS_ON")
+            source = record.get("source")
+            target = record.get("target")
 
-    graph = InfraGraph(nodes=nodes, edges=edges)
-    return JSONResponse(content=graph.model_dump(mode="json"))
+            if not source or not target:
+                continue
+            
+            edge_id = props.get("id") or props.get("edge_id") or f"{source}-{target}"
+            
+            edges.append({
+                "data": {
+                    "id": str(edge_id),
+                    "source": source,
+                    "target": target,
+                    "label": props.get("label") or rel_type
+                }
+            })
+
+        return {"nodes": nodes, "edges": edges}
+    except Exception as e:
+        print(f"!!! CRITICAL ERROR IN get_graph: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Graph retrieval failed: {str(e)}")
 
 
 @app.get("/api/v1/nodes")
 async def get_nodes() -> Dict[str, Any]:
     """Return all nodes and edges from Neo4j in a graph structure."""
-    nodes_query = "MATCH (n:Resource) RETURN n"
-    edges_query = "MATCH (a:Resource)-[r:DEPENDS_ON]->(b:Resource) RETURN a.id as source_id, b.id as target_id, r.label as label"
-    
-    nodes_raw = db.query(nodes_query) or []
-    edges_raw = db.query(edges_query) or []
-    
-    nodes = []
-    for record in nodes_raw:
-        n = record["n"]
-        nodes.append({
-            "id": n["id"],
-            "type": n["type"],
-            "label": n.get("name") or n.get("label") or "Unnamed Node",
-            "status": n.get("status", "live"),
-            "parentId": n.get("parent_id"),
-            "metrics": {"current_load": n.get("current_load", 0.0)},
-            "history": []
-        })
+    try:
+        nodes_query = "MATCH (n:Resource) RETURN properties(n) as props"
+        edges_query = "MATCH (a:Resource)-[r]->(b:Resource) RETURN properties(r) as props, type(r) as rel_type, a.id as source_id, b.id as target_id"
         
-    edges = []
-    for edge in edges_raw:
-        edges.append({
-            "source_id": edge["source_id"],
-            "target_id": edge["target_id"],
-            "label": edge.get("label")
-        })
+        nodes_raw = db.query(nodes_query) or []
+        edges_raw = db.query(edges_query) or []
+        
+        nodes = []
+        for record in nodes_raw:
+            props = record.get("props", {})
+            node_id = props.get("id")
+            if not node_id:
+                continue
+                
+            nodes.append({
+                "id": node_id,
+                "type": props.get("type", "unknown"),
+                "label": props.get("name") or props.get("label") or node_id,
+                "status": props.get("status", "live"),
+                "parentId": props.get("parent_id"),
+                "metrics": {"current_load": props.get("current_load", 0.0)},
+                "history": [],
+                "attributes": {
+                    "spawnX": props.get("spawnX"),
+                    "spawnY": props.get("spawnY")
+                }
+            })
+            
+        edges = []
+        for record in edges_raw:
+            props = record.get("props", {})
+            rel_type = record.get("rel_type", "DEPENDS_ON")
+            source = record.get("source_id")
+            target = record.get("target_id")
 
-    return {"nodes": nodes, "edges": edges}
+            if not source or not target:
+                continue
+                
+            edges.append({
+                "source_id": source,
+                "target_id": target,
+                "label": props.get("label") or rel_type
+            })
+
+        return {"nodes": nodes, "edges": edges}
+    except Exception as e:
+        print(f"!!! CRITICAL ERROR IN get_nodes: {str(e)}")
+        traceback.print_exc()
+        return {"nodes": [], "edges": [], "error": str(e)}
 
 
 @app.post("/api/v1/graph", status_code=status.HTTP_201_CREATED)
@@ -171,12 +225,15 @@ async def post_graph(
 @app.post("/api/v1/nodes", status_code=status.HTTP_201_CREATED)
 async def post_node(node: Node) -> dict:
     """Ingest a single node into Neo4j."""
-    cypher = "MERGE (n:Resource {id: $id}) SET n.name = $name, n.type = $type, n.status = $status RETURN n"
+    cypher = "MERGE (n:Resource {id: $id}) SET n.name = $name, n.type = $type, n.status = $status, n.parent_id = $parent_id, n.spawnX = $spawnX, n.spawnY = $spawnY RETURN n"
     params = {
         "id": node.id,
         "name": node.label,
         "type": node.type,
-        "status": node.status
+        "status": node.status,
+        "parent_id": node.parent_id,
+        "spawnX": node.attributes.get("spawnX") if node.attributes else None,
+        "spawnY": node.attributes.get("spawnY") if node.attributes else None
     }
     result = db.query(cypher, params)
     if not result:
@@ -186,24 +243,35 @@ async def post_node(node: Node) -> dict:
 
 
 @app.post("/api/v1/edges", status_code=status.HTTP_201_CREATED)
-async def post_edge(source_id: str, target_id: str, label: str = None) -> dict:
-    """Create a relationship between two nodes in Neo4j."""
+async def post_edge(edge: Edge) -> dict:
+    """Ingest a relationship between two nodes with dynamic labels and flattened attributes."""
+    # 1. Prepare properties by flattening the attributes dict
+    flat_props = flatten_dict(edge.attributes, "attr")
+    flat_props["edge_id"] = edge.id
+    
+    # 2. Use APOC to safely merge a relationship with a dynamic label
     cypher = """
-    MATCH (source:Resource {id: $source_id}), (target:Resource {id: $target_id}) 
-    MERGE (source)-[r:DEPENDS_ON]->(target) 
-    SET r.label = $label
-    RETURN r
+    MATCH (source:Resource {id: $source_id}), (target:Resource {id: $target_id})
+    CALL apoc.merge.relationship(source, $label, {id: $edge_id}, $props, target)
+    YIELD rel
+    RETURN rel
     """
     params = {
-        "source_id": source_id,
-        "target_id": target_id,
-        "label": label
+        "source_id": edge.source,
+        "target_id": edge.target,
+        "label": edge.label,
+        "edge_id": edge.id,
+        "props": flat_props
     }
+    
     result = db.query(cypher, params)
     if not result:
-        raise HTTPException(status_code=404, detail="Source or target node not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail=f"Source node '{edge.source}' or target node '{edge.target}' not found."
+        )
         
-    return {"message": "Edge created successfully", "edge": result[0]["r"]}
+    return {"message": "Edge ingested successfully", "edge_id": edge.id}
 
 @app.delete("/api/v1/nodes/{node_id}")
 async def delete_node(node_id: str) -> dict[str, str]:

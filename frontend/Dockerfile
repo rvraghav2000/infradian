@@ -10,7 +10,7 @@ RUN npm install
 COPY . .
 
 # Expose the Vite dev port
-EXPOSE 5173
+EXPOSE 3000
 
-# Run Vite with host mapping for Docker access
-CMD ["npm", "run", "dev", "--", "--host"]
+# Run Vite on port 3000 with host mapping for Docker access
+CMD ["npm", "run", "dev", "--", "--host", "--port", "3000"]

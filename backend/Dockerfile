@@ -15,4 +15,4 @@ EXPOSE 8000
 
 # Set the entrypoint to run the FastAPI application
 ENV PYTHONPATH=/app
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

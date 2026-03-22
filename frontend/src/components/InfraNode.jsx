@@ -31,8 +31,10 @@ export default function InfraNode({
     onGodModeSelect,
     expandedNodeId,
     isDragging = false,
+    physicsHovered = false,
 }) {
-    const [hovered, setHovered] = useState(false);
+    const [localHovered, setHovered] = useState(false);
+    const hovered = physicsHovered || localHovered;
     const { node } = nodeLayout;
     const lp = loadProfile(node.metrics?.current_load || 0);
     const meta = getCategoryMeta(node.type);
@@ -60,54 +62,90 @@ export default function InfraNode({
 /* ── Region (VPC / Subnet) — Dotted boundary ──────────────────── */
 
 function RegionNode({ layout, meta, dimmed, focused, theme, onNodeMouseDown, isDragging }) {
-    const { x, y, w, h, node } = layout;
+    const { node } = layout;
     const isVPC = node.type === 'aws_vpc';
     const isDark = theme === 'dark';
 
+    const accentColor = isVPC
+        ? (isDark ? '#0a84ff' : '#007AFF')
+        : (isDark ? '#5e5ce6' : '#5856D6');
+
     return (
         <motion.div
-            className="node-region absolute cursor-grab active:cursor-grabbing"
-            onMouseDown={(e) => onNodeMouseDown && onNodeMouseDown(node.id, e)}
+            className="node-region"
             initial={{ opacity: 0 }}
             animate={{
-                opacity: dimmed ? 0.2 : 1,
-                filter: dimmed ? 'saturate(0.3)' : 'saturate(1)',
+                opacity: dimmed ? 0.15 : 1,
+                filter: dimmed ? 'saturate(0.2)' : 'saturate(1)',
             }}
-            transition={{ duration: 0.4 }}
+            transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
             style={{
-                transform: `translate3d(${x}px, ${y}px, 0)`,
-                width: Math.round(w),
-                height: Math.round(h),
-                position: 'absolute',
-                transition: isDragging ? 'none' : 'transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.15)',
+                width: '100%',
+                height: '100%',
+                position: 'relative',
+                // Dashed region border — matches the overall isometric grid aesthetic
                 border: focused
-                    ? '2px solid #007AFF'
-                    : `1.5px dashed ${isVPC 
-                        ? (isDark ? 'rgba(10,132,255,0.3)' : 'rgba(0,122,255,0.25)') 
-                        : (isDark ? 'rgba(94,92,230,0.3)' : 'rgba(88,86,214,0.2)')}`,
-                borderRadius: isVPC ? 20 : 14,
-                background: isVPC 
-                    ? (isDark ? 'rgba(10,132,255,0.03)' : 'rgba(0,122,255,0.02)') 
-                    : (isDark ? 'rgba(94,92,230,0.03)' : 'rgba(88,86,214,0.02)'),
-                pointerEvents: 'auto',
-                backfaceVisibility: 'hidden',
-                transformStyle: 'preserve-3d',
+                    ? `2px solid #007AFF`
+                    : `1.5px dashed ${isVPC
+                        ? (isDark ? 'rgba(10,132,255,0.22)' : 'rgba(0,122,255,0.18)')
+                        : (isDark ? 'rgba(94,92,230,0.22)' : 'rgba(88,86,214,0.14)')}`,
+                borderRadius: isVPC ? 24 : 16,
+                background: isVPC
+                    ? (isDark ? 'rgba(10,132,255,0.025)' : 'rgba(0,122,255,0.015)')
+                    : (isDark ? 'rgba(94,92,230,0.025)' : 'rgba(88,86,214,0.012)'),
+                pointerEvents: 'none',
                 willChange: 'transform, width, height',
             }}
         >
+            {/* Label badge — top-left, matching the rest of the Infradian UI system */}
             <div
-                className="absolute flex items-center gap-2 px-4"
                 style={{
-                    top: 8, left: 12, fontSize: 12, fontWeight: 600,
-                    color: isVPC 
-                        ? (isDark ? '#0a84ff' : '#007AFF') 
-                        : (isDark ? '#5e5ce6' : '#5856D6'),
-                    opacity: 0.7, letterSpacing: '-0.01em',
+                    position: 'absolute',
+                    top: 10,
+                    left: 14,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    padding: '3px 8px 3px 6px',
+                    borderRadius: 8,
+                    background: isDark ? 'rgba(28,28,30,0.7)' : 'rgba(255,255,255,0.75)',
+                    backdropFilter: 'blur(10px)',
+                    WebkitBackdropFilter: 'blur(10px)',
+                    border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`,
+                    boxShadow: isDark ? '0 1px 6px rgba(0,0,0,0.3)' : '0 1px 4px rgba(0,0,0,0.05)',
+                    pointerEvents: 'none',
+                    maxWidth: 'calc(100% - 28px)',
+                    overflow: 'hidden',
                 }}
             >
-                <span>{meta.icon}</span>
-                <span>{node.label}</span>
-                <span className="text-[10px] font-normal ml-2" style={{ color: '#aeaeb2' }}>{node.id}</span>
+                {/* Category icon */}
+                <span style={{ fontSize: 11, lineHeight: 1, flexShrink: 0 }}>{meta.icon}</span>
+
+                {/* Label — Inter, semibold, same scale as node meta text */}
+                <span style={{
+                    fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    letterSpacing: '-0.01em',
+                    color: accentColor,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                }}>
+                    {node.label}
+                </span>
+
+                {/* ID chip — muted, same as the sub-label on CardNode */}
+                <span style={{
+                    fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
+                    fontSize: 9,
+                    fontWeight: 500,
+                    color: isDark ? '#636366' : '#aeaeb2',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                }}>
+                    {node.id}
+                </span>
             </div>
         </motion.div>
     );
@@ -141,17 +179,17 @@ function CardNode({
             style={{
                 transform: `translate3d(${x}px, ${y}px, 0)`,
                 width: isExpanded ? 320 : w,
-                position: 'absolute',
+                position: 'relative',
                 zIndex: isExpanded ? 100 : hovered ? 50 : 10,
+                pointerEvents: 'none', // Critical: Let drag events reach WebGL Cytoscape beneath
                 transition: isDragging ? 'none' : 'transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.15), width 0.3s ease',
             }}
         >
             {/* ── Compact card (always visible) ─────────────────────────── */}
             <div
                 className="rounded-xl flex items-center gap-3 px-3 select-none cursor-pointer"
-                onClick={(e) => { e.stopPropagation(); onNodeClick && onNodeClick(node.id, e); }}
-                onDoubleClick={(e) => { e.stopPropagation(); onNodeDoubleClick && onNodeDoubleClick(node.id, e); }}
                 style={{
+                    pointerEvents: 'none', // Keep un-draggable
                     height: h,
                     background: isPlanned ? 'rgba(0,122,255,0.05)' : (isDark ? 'rgba(44,44,46,0.75)' : 'rgba(255,255,255,0.88)'),
                     backdropFilter: 'blur(20px) saturate(1.8)',
@@ -237,6 +275,7 @@ function CardNode({
                             right: 0,
                             justifyContent: 'center',
                             zIndex: 60,
+                            pointerEvents: 'auto', // Buttons MUST be clickable!
                         }}
                     >
                         <ActionButton
@@ -280,6 +319,7 @@ function CardNode({
                             borderBottom: '1px solid rgba(0,122,255,0.2)',
                             borderRadius: '0 0 14px 14px',
                             boxShadow: isDark ? '0 8px 24px rgba(0,0,0,0.4)' : '0 8px 24px rgba(0,0,0,0.08)',
+                            pointerEvents: 'auto', // Panel MUST be clickable!
                         }}
                     >
                         {/* Panel header */}

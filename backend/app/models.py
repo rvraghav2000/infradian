@@ -141,25 +141,14 @@ class Node(BaseModel):
 
 class Edge(BaseModel):
     """A directed dependency between two Nodes.
-
-    The direction indicates data / request flow:
-    ``source_id → target_id``.
+    
+    This model matches the ingestion contract for discovery agents.
     """
-
-    source_id: str = Field(
-        ...,
-        min_length=1,
-        description="Id of the upstream (source) node.",
-    )
-    target_id: str = Field(
-        ...,
-        min_length=1,
-        description="Id of the downstream (target) node.",
-    )
-    label: Optional[str] = Field(
-        default=None,
-        description="Optional label for the edge (e.g. 'HTTPS', 'TCP/5432').",
-    )
+    id: str = Field(..., description="Unique ID for the relationship.")
+    source: str = Field(..., description="ID of the source node.")
+    target: str = Field(..., description="ID of the target node.")
+    label: str = Field(default="DEPENDS_ON", description="The relationship type (e.g. 'CONNECTS_TO').")
+    attributes: dict[str, Any] = Field(default_factory=dict, description="Metadata for the edge.")
 
 
 # ── Top-level payload ────────────────────────────────────────────────
