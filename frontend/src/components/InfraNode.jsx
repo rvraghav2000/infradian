@@ -1,24 +1,20 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getCategoryMeta } from '../layout';
+import { useAnalysis } from '../context/AnalysisContext';
+import NodeHoverPreview from './NodeHoverPreview';
 
-/* ── Load profile — Apple colors ───────────────────────────────── */
-
-function loadProfile(load) {
-    if (load > 0.8) return { tier: 'high', color: '#FF3B30' };
-    if (load > 0.5) return { tier: 'mid', color: '#FF9500' };
-    return { tier: 'low', color: '#34C759' };
-}
-
-/* ── Status badge colors ───────────────────────────────────────── */
-
-const STATUS_STYLE = {
-    success: { color: '#34C759', bg: 'rgba(52,199,89,0.08)', icon: '✓' },
-    failure: { color: '#FF3B30', bg: 'rgba(255,59,48,0.08)', icon: '✕' },
-    in_progress: { color: '#FF9500', bg: 'rgba(255,149,0,0.08)', icon: '⟳' },
+const loadProfile = (load) => {
+    if (load > 0.8) return { color: '#FF3B30', label: 'CRITICAL', bg: 'rgba(255,59,48,0.1)' };
+    if (load > 0.5) return { color: '#FF9500', label: 'HIGH', bg: 'rgba(255,149,0,0.1)' };
+    return { color: '#34C759', label: 'NORMAL', bg: 'rgba(52,199,89,0.1)' };
 };
 
-/* ── Positioned Node ───────────────────────────────────────────── */
+const STATUS_STYLE = {
+    success: { border: '#34C759', bg: 'rgba(52,199,89,0.04)', badge: '#34C759', icon: '✓', color: '#34C759' },
+    failure: { border: '#FF3B30', bg: 'rgba(255,59,48,0.04)', badge: '#FF3B30', icon: '✕', color: '#FF3B30' },
+    in_progress: { border: '#FF9500', bg: 'rgba(255,149,0,0.04)', badge: '#FF9500', icon: '⟳', color: '#FF9500' },
+};
 
 export default function InfraNode({
     nodeLayout,
@@ -34,6 +30,9 @@ export default function InfraNode({
     physicsHovered = false,
 }) {
     const [localHovered, setHovered] = useState(false);
+    const { isSimulationMode } = useAnalysis();
+    
+    // Logic for hover state
     const hovered = physicsHovered || localHovered;
     const { node } = nodeLayout;
     const lp = loadProfile(node.metrics?.current_load || 0);
@@ -45,6 +44,10 @@ export default function InfraNode({
 
     const isExpanded = expandedNodeId === node.id;
 
+    // Simulation mapping
+    const isPlanned = node.status === 'planned';
+    const isRemovalCandidate = node.id.includes('remove'); // Mock for now until we have real simulation states
+
     return (
         <CardNode
             layout={nodeLayout} meta={meta} lp={lp}
@@ -55,6 +58,7 @@ export default function InfraNode({
             onNodeMouseDown={onNodeMouseDown} 
             isExpanded={isExpanded}
             onGodModeSelect={onGodModeSelect} isDragging={isDragging}
+            isRemovalCandidate={isRemovalCandidate}
         />
     );
 }
@@ -155,7 +159,7 @@ function RegionNode({ layout, meta, dimmed, focused, theme, onNodeMouseDown, isD
 
 function CardNode({
     layout, meta, lp, hovered, setHovered,
-    dimmed, focused, theme, onNodeClick, onNodeDoubleClick, onNodeMouseDown, onGodModeSelect, isExpanded, isDragging,
+    dimmed, focused, theme, onNodeClick, onNodeDoubleClick, onNodeMouseDown, onGodModeSelect, isExpanded, isDragging, isRemovalCandidate,
 }) {
     const { x, y, w, h, node } = layout;
     const events = node.history || [];
@@ -180,38 +184,66 @@ function CardNode({
                 transform: `translate3d(${x}px, ${y}px, 0)`,
                 width: isExpanded ? 320 : w,
                 position: 'relative',
-                zIndex: isExpanded ? 100 : hovered ? 50 : 10,
+                zIndex: isExpanded ? 100 : hovered ? 150 : 10, // Higher Z for hover
                 pointerEvents: 'none', // Critical: Let drag events reach WebGL Cytoscape beneath
                 transition: isDragging ? 'none' : 'transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.15), width 0.3s ease',
             }}
         >
+            {/* ── Hover Preview Tooltip ──────────────────────────────────── */}
+            <AnimatePresence>
+                {hovered && !isDragging && !isExpanded && (
+                    <div className="absolute left-1/2 -translate-x-1/2" style={{ top: -140, pointerEvents: 'none' }}>
+                        <NodeHoverPreview node={node} theme={theme} />
+                    </div>
+                )}
+            </AnimatePresence>
+
             {/* ── Compact card (always visible) ─────────────────────────── */}
             <div
-                className="rounded-xl flex items-center gap-3 px-3 select-none cursor-pointer"
+                className="rounded-xl flex items-center gap-3 px-3 select-none cursor-pointer group"
                 style={{
                     pointerEvents: 'none', // Keep un-draggable
                     height: h,
-                    background: isPlanned ? 'rgba(0,122,255,0.05)' : (isDark ? 'rgba(44,44,46,0.75)' : 'rgba(255,255,255,0.88)'),
+                    background: isRemovalCandidate 
+                        ? 'rgba(255, 59, 48, 0.05)'
+                        : isPlanned ? 'rgba(0,122,255,0.05)' : (isDark ? 'rgba(44,44,46,0.75)' : 'rgba(255,255,255,0.88)'),
                     backdropFilter: 'blur(20px) saturate(1.8)',
                     WebkitBackdropFilter: 'blur(20px) saturate(1.8)',
-                    border: isPlanned
-                        ? '2px dashed rgba(0,122,255,0.8)'
-                        : focused
-                            ? '1.5px solid #007AFF'
-                            : isExpanded
-                                ? '1px solid rgba(0,122,255,0.3)'
-                                : isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.07)',
+                    border: isRemovalCandidate
+                        ? '1.5px solid #FF3B30'
+                        : isPlanned
+                            ? '2px dashed rgba(0,122,255,0.8)'
+                            : focused
+                                ? '1.5px solid #007AFF'
+                                : isExpanded
+                                    ? '1px solid rgba(0,122,255,0.3)'
+                                    : isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.07)',
                     borderRadius: isExpanded ? '14px 14px 0 0' : 14,
-                    boxShadow: isPlanned
-                        ? 'none' // Handled by CSS animation
-                        : focused
-                            ? (isDark ? '0 0 0 3px rgba(10,132,255,0.2), 0 4px 16px rgba(0,0,0,0.4)' : '0 0 0 3px rgba(0,122,255,0.12), 0 4px 16px rgba(0,0,0,0.06)')
-                            : hovered
-                                ? (isDark ? '0 4px 20px rgba(0,0,0,0.4), 0 1px 4px rgba(255,255,255,0.04)' : '0 4px 20px rgba(0,0,0,0.1), 0 1px 4px rgba(0,0,0,0.06)')
-                                : (isDark ? '0 1px 3px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.03)'),
+                    boxShadow: isRemovalCandidate
+                        ? '0 0 15px rgba(255,59,48,0.2)'
+                        : isPlanned
+                            ? 'none' // Handled by CSS animation
+                            : focused
+                                ? (isDark ? '0 0 0 3px rgba(10,132,255,0.2), 0 4px 16px rgba(0,0,0,0.4)' : '0 0 0 3px rgba(0,122,255,0.12), 0 4px 16px rgba(0,0,0,0.06)')
+                                : hovered
+                                    ? (isDark ? '0 4px 20px rgba(0,0,0,0.4), 0 1px 4px rgba(255,255,255,0.04)' : '0 4px 20px rgba(0,0,0,0.1), 0 1px 4px rgba(0,0,0,0.06)')
+                                    : (isDark ? '0 1px 3px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.03)'),
                     transition: 'box-shadow 0.25s ease, border-color 0.2s ease, border-radius 0.2s ease',
                 }}
             >
+                {/* ── Node Analysis Badges ────────────────────────────────── */}
+                <div className="absolute top-[-5px] right-[10px] flex gap-1 pointer-events-none">
+                     {node.attributes?.risk > 50 && (
+                         <div className="w-1.5 h-1.5 rounded-full bg-[#FF3B30] glow-red" title="High Risk" />
+                     )}
+                     {node.attributes?.monthly_cost > 10 && (
+                         <div className="w-1.5 h-1.5 rounded-full bg-[#34C759] glow-green" title="High Cost" />
+                     )}
+                     {(node.metrics?.current_load || 0) > 0.7 && (
+                         <div className="w-1.5 h-1.5 rounded-full bg-[#007AFF] glow-blue" title="High Load" />
+                     )}
+                </div>
+
                 {/* Icon badge */}
                 <div
                     className="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center text-lg"
@@ -226,15 +258,19 @@ function CardNode({
                         <div className="text-[12px] font-semibold truncate leading-tight" style={{ color: isDark ? 'rgba(255,255,255,0.9)' : '#1d1d1f', letterSpacing: '-0.01em' }}>
                             {node.label}
                         </div>
-                        {isPlanned && (
-                            <span className="text-[8px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded-sm" style={{ background: 'rgba(0,122,255,0.15)', color: '#007AFF' }}>
-                                Planned
+                        {(isPlanned || isRemovalCandidate) && (
+                            <span className="text-[8px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded-sm" 
+                                  style={{ 
+                                      background: isRemovalCandidate ? 'rgba(255,59,48,0.15)' : 'rgba(0,122,255,0.15)', 
+                                      color: isRemovalCandidate ? '#FF3B30' : '#007AFF' 
+                                  }}>
+                                {isRemovalCandidate ? 'Removed' : 'Planned'}
                             </span>
                         )}
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
                         <span className="text-[9px] font-medium" style={{ color: isDark ? '#aeaeb2' : '#86868b' }}>{meta.label}</span>
-                        {!isPlanned && (
+                        {!isPlanned && !isRemovalCandidate && (
                             <>
                                 <span className="text-[9px]" style={{ color: isDark ? '#636366' : '#d1d1d6' }}>·</span>
                                 <span className="text-[10px] font-medium" style={{ color: lp.color }}>
@@ -246,7 +282,7 @@ function CardNode({
                 </div>
 
                 {/* Pipeline count badge */}
-                {hasEvents && (
+                {hasEvents && !isRemovalCandidate && (
                     <div
                         className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold"
                         style={{

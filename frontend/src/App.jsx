@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import CytoscapeCanvas from './components/CytoscapeCanvas';
 import CommandPalette from './components/CommandPalette';
 import HistoryStack from './components/HistoryStack';
@@ -13,44 +14,10 @@ const PALETTE_ITEMS = [
 ];
 
 
-/* ── Blast radius ──────────────────────────────────────────────── */
-
-function computeBlastRadius(focusedId, nodes, edges, hoveredEdgeId) {
-  if (!focusedId && !hoveredEdgeId) return null;
-
-  const connected = new Set();
-  
-  if (focusedId) {
-    connected.add(focusedId);
-    for (const e of edges) {
-      if (e.source_id === focusedId) connected.add(e.target_id);
-      if (e.target_id === focusedId) connected.add(e.source_id);
-    }
-  }
-
-  if (hoveredEdgeId) {
-    const [src, tgt] = hoveredEdgeId.split('->');
-    connected.add(src);
-    connected.add(tgt);
-  }
-
-  // Walk parent chain
-  const nodeMap = {};
-  for (const n of nodes) nodeMap[n.id] = n;
-  
-  const initialConnected = [...connected];
-  for (const id of initialConnected) {
-    let cur = nodeMap[id];
-    while (cur && cur.parentId) {
-      connected.add(cur.parentId);
-      cur = nodeMap[cur.parentId];
-    }
-  }
-
-  return connected;
-}
-
-/* ── App ───────────────────────────────────────────────────────── */
+import { AnalysisProvider, useAnalysis } from './context/AnalysisContext';
+import OverlayToggles from './components/OverlayToggles';
+import AnalysisPanel from './components/AnalysisPanel';
+import SimulationSummary from './components/SimulationSummary';
 
 export default function App() {
   const [rawData, setRawData] = useState({ nodes: [], edges: [] });
@@ -66,7 +33,9 @@ export default function App() {
   const [hoveredEdgeId, setHoveredEdgeId] = useState(null);
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
   const [theme, setTheme] = useState('light');
-  const [isPlanningMode, setIsPlanningMode] = useState(false);
+  const { isSimulationMode, setIsSimulationMode } = useAnalysis();
+  const [blastRadiusData, setBlastRadiusData] = useState(null);
+  const [blastLoading, setBlastLoading] = useState(false);
   const initialLayoutPerformed = useRef(false);
 
 
@@ -126,13 +95,32 @@ export default function App() {
     setFocusedNodeId(null);
     setExpandedNodeId(null);
     setPanOffset({ x: 0, y: 0 });
+    setBlastRadiusData(null);
   }, []);
 
-  /* ── Blast radius ────────────────────────────────────────────── */
-  const blastRadius = useMemo(() => {
-    if (!rawData) return null;
-    return computeBlastRadius(focusedNodeId, rawData.nodes, rawData.edges, hoveredEdgeId);
-  }, [focusedNodeId, rawData, hoveredEdgeId]);
+  /* ── Backend Blast radius Data Fetch ─────────────────────────── */
+  useEffect(() => {
+    if (!focusedNodeId || focusedNodeId.startsWith('planned-')) {
+      setBlastRadiusData(null);
+      return;
+    }
+    
+    setBlastLoading(true);
+    fetch('/api/v1/blast-radius', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_node_id: focusedNodeId, max_hops: 5, direction: 'downstream' })
+    })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      setBlastRadiusData(data);
+      setBlastLoading(false);
+    })
+    .catch(e => {
+      console.error("Failed to fetch blast radius:", e);
+      setBlastLoading(false);
+    });
+  }, [focusedNodeId]);
 
   /* ── Node Drop from PlanningPanel (graph-space coords) ───────── */
   const handleNodeDrop = useCallback(async (primitiveData, graphX, graphY) => {
@@ -141,7 +129,8 @@ export default function App() {
       ...primitiveData,
       id: newId,
       label: primitiveData.label || primitiveData.type,
-      parentId: null,
+      parentId: null, // Default for now — in a future iteration this could be set by the drop target
+      parent_id: null,
       attributes: {
         spawnX: graphX,
         spawnY: graphY,
@@ -289,8 +278,9 @@ export default function App() {
     >
       {/* ── Global Actions (Top Right) ───────────────────────────────── */}
       <div 
-        className="fixed top-7 right-44 z-[60] flex items-center gap-1.5 px-2 py-1.5 rounded-xl"
+        className="fixed top-7 right-44 flex items-center gap-1.5 px-2 py-1.5 rounded-xl"
         style={{
+          zIndex: 60,
           background: theme === 'dark' ? 'rgba(30,30,32,0.85)' : 'rgba(255,255,255,0.85)',
           backdropFilter: 'blur(12px)',
           WebkitBackdropFilter: 'blur(12px)',
@@ -363,32 +353,32 @@ export default function App() {
 
           {/* Planning Toggle */}
           <button
-            onClick={(e) => { e.stopPropagation(); setIsPlanningMode(p => !p); }}
+            onClick={(e) => { e.stopPropagation(); setIsSimulationMode(p => !p); }}
             className="flex items-center gap-2 px-3 h-8 rounded-md cursor-pointer border-0 text-xs font-semibold uppercase tracking-wide"
             style={{
-              background: isPlanningMode 
+              background: isSimulationMode 
                 ? (theme === 'dark' ? 'rgba(10,132,255,0.15)' : 'rgba(0,122,255,0.1)') 
                 : 'transparent',
-              color: isPlanningMode 
+              color: isSimulationMode 
                 ? (theme === 'dark' ? '#0a84ff' : '#007AFF') 
                 : (theme === 'dark' ? '#aeaeb2' : '#86868b'),
               transition: 'all 0.2s',
             }}
             onMouseEnter={e => {
-              if(!isPlanningMode) {
+              if(!isSimulationMode) {
                 e.currentTarget.style.background = theme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)';
                 e.currentTarget.style.color = theme === 'dark' ? '#fff' : '#1d1d1f';
               }
             }}
             onMouseLeave={e => {
-              if(!isPlanningMode) {
+              if(!isSimulationMode) {
                 e.currentTarget.style.background = 'transparent';
                 e.currentTarget.style.color = theme === 'dark' ? '#aeaeb2' : '#86868b';
               }
             }}
           >
             <span>Draft</span>
-            <span style={{ fontSize: 9 }}>{isPlanningMode ? 'ON' : 'OFF'}</span>
+            <span style={{ fontSize: 9 }}>{isSimulationMode ? 'ON' : 'OFF'}</span>
           </button>
 
           <div className="w-px h-4 mx-1" style={{ background: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
@@ -411,10 +401,14 @@ export default function App() {
           >
             <span>Organize Graph</span>
           </button>
+
+          <div className="w-px h-4 mx-1" style={{ background: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
+
+          <OverlayToggles theme={theme} />
       </div>
 
       {/* HUD & Legend overlays restored from IsometricCanvas */}
-      <div className="fixed top-7 left-9 z-[60] select-none pointer-events-none">
+      <div className="fixed top-7 left-9 select-none pointer-events-none" style={{ zIndex: 60 }}>
           <h1 className="text-[22px] font-semibold" style={{ color: theme === 'dark' ? '#fff' : '#1d1d1f', letterSpacing: '-0.02em' }}>
               Infradian
           </h1>
@@ -482,7 +476,7 @@ export default function App() {
         }}
       />
 
-      <div className="w-full h-full relative z-0">
+      <div className="w-full h-full relative">
         <CytoscapeCanvas 
           graphData={rawData}
           layoutTrigger={layoutTrigger}
@@ -503,10 +497,12 @@ export default function App() {
                <div 
                  id={`infranode-${node.id}`} 
                  key={node.id} 
-                 className="absolute top-0 left-0"
+                 className="absolute top-0 left-0 transition-opacity duration-500"
                  style={{ 
                    willChange: 'transform',
-                   transform: 'translate(-50%, -50%) translate3d(-9999px, -9999px, 0)',
+                   opacity: blastRadiusData && blastRadiusData.impacted_nodes 
+                            && !blastRadiusData.impacted_nodes.some(n => n.id === node.id) 
+                            && node.id !== focusedNodeId ? 0.25 : 1,
                    // Region nodes need explicit dimensions so their children can use width: 100%
                    ...(isRegion ? {
                      width: 'var(--region-w, 200px)',
@@ -578,8 +574,34 @@ export default function App() {
         onSelect={handleGodModeSelect}
       />
 
+      {/* Analysis Panel */}
+      <AnimatePresence>
+        {focusedNodeId && !focusedNodeId.startsWith('planned-') && (
+            <AnalysisPanel 
+                node={rawData.nodes.find(n => n.id === focusedNodeId)}
+                blastRadius={blastRadiusData}
+                theme={theme}
+                onClose={() => setFocusedNodeId(null)}
+            />
+        )}
+      </AnimatePresence>
+
+      {/* Simulation Summary (Draft Mode) */}
+      <AnimatePresence>
+        {isSimulationMode && (
+            <SimulationSummary 
+                deltaData={{
+                    riskReduction: 12.4,
+                    costDelta: -145.50,
+                    criticalImpact: false
+                }}
+                theme={theme}
+            />
+        )}
+      </AnimatePresence>
+
       {/* Planning Mode Sidebar */}
-      {isPlanningMode && (
+      {isSimulationMode && (
         <PlanningPanel theme={theme} />
       )}
     </div>

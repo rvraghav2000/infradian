@@ -1,7 +1,8 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo, useRef, useEffect } from 'react';
 import CytoscapeComponent from 'react-cytoscapejs';
 import cytoscape from 'cytoscape';
 import dagre from 'cytoscape-dagre';
+import { useAnalysis, OVERLAY_TYPES } from '../context/AnalysisContext';
 
 cytoscape.use(dagre);
 
@@ -27,9 +28,9 @@ const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onNodeDoubleCl
           ...n, 
           id: String(n.id), 
           original_id: n.id,
-          // Wire parentId → Cytoscape's compound 'parent' field.
-          // Without this, Dagre treats all nodes as orphans and never nests them inside VPC/Subnet regions.
-          parent: n.parentId ? String(n.parentId) : undefined
+          // Wire parent property → Cytoscape's compound 'parent' field.
+          // Support both snake_case (backend) and camelCase (planned)
+          parent: (n.parentId || n.parent_id) ? String(n.parentId || n.parent_id) : undefined
         } 
       };
     });
@@ -108,11 +109,67 @@ const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onNodeDoubleCl
     name: 'dagre',
     rankDir: 'TB',
     spacingFactor: 2.0,   // More space between nodes to prevent overlap
-    nodeSep: 60,          // Explicit horizontal separation between sibling nodes
-    rankSep: 80,          // Explicit vertical separation between hierarchy ranks
     animate: true,
     fit: false
   }), []);
+
+  const { activeOverlays } = useAnalysis();
+
+  // ── Apply Overlays & Highlighting ─────────────────────────────
+  useEffect(() => {
+    if (!cyRef.current) return;
+    const cy = cyRef.current;
+
+    cy.batch(() => {
+      // Reset everything first
+      cy.elements().removeClass('overlay-active highlight-path dimmed-node');
+      cy.elements().style({
+        'overlay-opacity': 0,
+        'width': 1.5,
+        'line-color': '#007AFF',
+        'target-arrow-color': '#007AFF',
+        'border-width': 0
+      });
+
+      // Active Overlays (Risk, Cost, Traffic)
+      activeOverlays.forEach(type => {
+        cy.nodes().forEach(node => {
+          const data = node.data();
+          const attributes = data.attributes || {};
+
+          if (type === OVERLAY_TYPES.RISK) {
+            const risk = attributes.risk || 0;
+            if (risk > 30) {
+              node.style({
+                'overlay-color': risk > 70 ? '#FF3B30' : '#FF9500',
+                'overlay-opacity': 0.3,
+                'overlay-padding': 10 + (risk / 10)
+              });
+            }
+          } else if (type === OVERLAY_TYPES.COST) {
+            const cost = attributes.monthly_cost || 0;
+            if (cost > 50) {
+              node.style({
+                'border-width': 4,
+                'border-color': '#34C759',
+                'border-opacity': 0.5
+              });
+            }
+          }
+        });
+
+        if (type === OVERLAY_TYPES.TRAFFIC) {
+          cy.edges().style({
+            'width': 3,
+            'line-color': '#007AFF',
+            'target-arrow-color': '#007AFF',
+            'opacity': 1,
+            'line-dash-pattern': [10, 5],
+          });
+        }
+      });
+    });
+  }, [activeOverlays, theme, graphData]);
 
   if (cyElements.length === 0) return <div style={{ padding: '20px' }}>Loading Infrastructure Map...</div>;
 
@@ -120,8 +177,8 @@ const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onNodeDoubleCl
     <div style={{ width: '100%', height: '100vh', position: 'relative' }}>
 
       {/* Zoom indicator restored from IsometricCanvas */}
-      <div className="absolute top-7 right-9 z-50 select-none">
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg"
+      <div className="absolute top-7 right-8 z-[999] select-none">
+        <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-xl"
           style={{
             background: theme === 'dark' ? 'rgba(30,30,32,0.85)' : 'rgba(255,255,255,0.85)',
             border: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
@@ -130,7 +187,7 @@ const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onNodeDoubleCl
           }}
         >
           <button
-            onClick={(e) => { e.stopPropagation(); if (cyRef.current) cyRef.current.zoom({ level: Math.max(0.1, cyRef.current.zoom() - 0.2), renderedPosition: { x: window.innerWidth / 2, y: window.innerHeight / 2 } }); }}
+            onClick={(e) => { e.stopPropagation(); if (cyRef.current) cyRef.current.zoom({ level: Math.max(0.01, cyRef.current.zoom() - 0.2), renderedPosition: { x: window.innerWidth / 2, y: window.innerHeight / 2 } }); }}
             className="text-[13px] w-6 h-6 rounded flex items-center justify-center cursor-pointer bg-transparent border-0"
             style={{ color: theme === 'dark' ? '#aeaeb2' : '#86868b' }}
             onMouseEnter={(e) => { e.currentTarget.style.background = theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.04)'; }}
@@ -140,7 +197,7 @@ const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onNodeDoubleCl
             100%
           </span>
           <button
-            onClick={(e) => { e.stopPropagation(); if (cyRef.current) cyRef.current.zoom({ level: Math.min(2.5, cyRef.current.zoom() + 0.2), renderedPosition: { x: window.innerWidth / 2, y: window.innerHeight / 2 } }); }}
+            onClick={(e) => { e.stopPropagation(); if (cyRef.current) cyRef.current.zoom({ level: cyRef.current.zoom() + 0.2, renderedPosition: { x: window.innerWidth / 2, y: window.innerHeight / 2 } }); }}
             className="text-[13px] w-6 h-6 rounded flex items-center justify-center cursor-pointer bg-transparent border-0"
             style={{ color: theme === 'dark' ? '#aeaeb2' : '#86868b' }}
             onMouseEnter={(e) => { e.currentTarget.style.background = theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.04)'; }}
@@ -215,15 +272,23 @@ const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onNodeDoubleCl
               cy.scratch('scrollLock', null);
               cy.scratch('lockTimeout', null);
 
-              cy.container().addEventListener('wheel', (e) => {
-                e.preventDefault();
-                e.stopPropagation(); // Block Cytoscape from receiving the native event
+              window.addEventListener('wheel', (e) => {
+                // If the user's mouse is actively over a fixed sidebar or modal, let them natively scroll it
+                if (e.target.closest('.fixed')) return;
+
+                e.preventDefault(); // Block Chrome from zooming the browser UI or navigating history
+                e.stopPropagation();
+
+                // Recalculate pure screen-space coordinates since e.offsetX/Y breaks if hovered over an HTML card
+                const rect = cy.container().getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
 
                 if (e.ctrlKey || e.metaKey) {
                   // Trackpad pinch-to-zoom / Apple.com CMD+Scroll Zoom
                   const zoomLvl = cy.zoom();
                   const targetZoom = zoomLvl * Math.exp(-e.deltaY * 0.015);
-                  cy.zoom({ level: targetZoom, renderedPosition: { x: e.offsetX, y: e.offsetY } });
+                  cy.zoom({ level: targetZoom, renderedPosition: { x, y } });
                 } else {
                   // 1-Axis Continuous Scroll Lock (Prevents diagonal wobble)
                   if (!cy.scratch('scrollLock')) {
@@ -240,7 +305,7 @@ const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onNodeDoubleCl
                     cy.panBy({ x: 0, y: -e.deltaY });
                   }
                 }
-              }, { passive: false, capture: true }); // Capture phase guarantees we intercept before WebGL
+              }, { passive: false, capture: true }); // Capture phase guarantees we intercept before WebGL or React
             }
 
             // ── Native Drag-and-Drop from PlanningPanel ───────────────
@@ -298,23 +363,16 @@ const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onNodeDoubleCl
               const nodeModelH = CARD_H / zoom;
 
               cy.nodes().forEach(node => {
-                // Update the WebGL hitbox to match the card's screen footprint
                 if (!node.isParent()) {
                   node.style({ width: `${nodeModelW}px`, height: `${nodeModelH}px` });
                 }
 
                 const el = document.getElementById(`infranode-${node.id()}`);
                 if (el) {
-                  // renderedPosition is already in screen-space (accounts for pan + zoom)
                   const pos = node.renderedPosition();
-
-                  // Fixed-size transform: NO scale(zoom) — cards always render at native size.
-                  // centering is handled by translate(-50%, -50%).
                   el.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0) translate(-50%, -50%)`;
 
                   if (node.isParent()) {
-                    // Region containers: scale dimension CSS vars proportionally with zoom
-                    // so the dotted VPC boundary region scales correctly with the canvas.
                     el.style.setProperty('--region-w', `${node.outerWidth() * zoom}px`);
                     el.style.setProperty('--region-h', `${node.outerHeight() * zoom}px`);
                   }
