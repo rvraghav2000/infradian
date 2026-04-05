@@ -120,6 +120,10 @@ class Node(BaseModel):
         default=NodeStatus.LIVE,
         description="Lifecycle status of this resource.",
     )
+    account_id: Optional[str] = Field(
+        default=None,
+        description="Authoritative ledger ID (e.g. AWS Account number).",
+    )
     parent_id: Optional[str] = Field(
         default=None,
         validation_alias="parentId",

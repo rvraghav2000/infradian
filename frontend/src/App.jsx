@@ -17,6 +17,7 @@ import { AnalysisProvider, useAnalysis } from './context/AnalysisContext';
 import AnalysisPanel from './components/AnalysisPanel';
 import SimulationSummary from './components/SimulationSummary';
 import TopActionsDrawer from './components/TopActionsDrawer';
+import AWSSyncModal from './components/AWSSyncModal';
 
 export default function App() {
   const [rawData, setRawData] = useState({ nodes: [], edges: [] });
@@ -34,6 +35,9 @@ export default function App() {
   const [theme, setTheme] = useState('light');
   const { isSimulationMode, setIsSimulationMode, blastRadius, clearAnalysis } = useAnalysis();
   const [isAnalysisOpen, setIsAnalysisOpen] = useState(false);
+  const [isAWSModalOpen, setIsAWSModalOpen] = useState(false);
+  const [accounts, setAccounts] = useState([]);
+  const [selectedAccount, setSelectedAccount] = useState('all');
   const initialLayoutPerformed = useRef(false);
 
 
@@ -45,29 +49,36 @@ export default function App() {
 
   /* ── Fetch ────────────────────────────────────────────────────── */
   useEffect(() => {
-    const loadData = () => {
-      fetch('/api/v1/nodes')
-        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-        .then(data => {
-            setRawData(data);
-            setIsLoading(false);
-            
-            // Initial Paint: Auto-organize only once on first successful load
-            if (!initialLayoutPerformed.current && data.nodes?.length > 0) {
-              applyAutoLayout();
-              initialLayoutPerformed.current = true;
-            }
-        })
-        .catch(e => {
-            setError(e.message);
-            setIsLoading(false);
-        });
+    const loadData = async () => {
+      try {
+        const [accRes, nodesRes] = await Promise.all([
+            fetch('/api/v1/accounts'),
+            fetch(`/api/v1/nodes?account_id=${selectedAccount}`)
+        ]);
+        
+        if (!accRes.ok || !nodesRes.ok) throw new Error(`HTTP fetch failed`);
+        
+        const accountsData = await accRes.json();
+        const data = await nodesRes.json();
+        
+        setAccounts(accountsData);
+        setRawData(data);
+        setIsLoading(false);
+        
+        if (!initialLayoutPerformed.current && data.nodes?.length > 0) {
+            applyAutoLayout();
+            initialLayoutPerformed.current = true;
+        }
+      } catch (e) {
+          setError(e.message);
+          setIsLoading(false);
+      }
     };
 
     loadData();
     const timer = setInterval(loadData, 5000); // Poll every 5s
     return () => clearInterval(timer);
-  }, []);
+  }, [selectedAccount, applyAutoLayout]);
 
   // Removed automatic layout useEffect to prevent constant reorganization.
   // Layout is now triggered manually via applyAutoLayout() or on initial paint.
@@ -378,6 +389,45 @@ export default function App() {
           >
             <span>Organize Graph</span>
           </button>
+          
+          <div className="w-px h-4 mx-1" style={{ background: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
+          
+          {accounts.length > 0 && (
+              <>
+                  <select
+                      value={selectedAccount}
+                      onChange={(e) => setSelectedAccount(e.target.value)}
+                      className="bg-transparent border-0 outline-none text-[11px] font-medium px-2 py-1 appearance-none cursor-pointer text-center tracking-wide"
+                      style={{
+                          color: theme === 'dark' ? '#aeaeb2' : '#86868b'
+                      }}
+                  >
+                      <option value="all">ALL ENVIRONMENTS</option>
+                      {accounts.map(acc => (
+                          <option key={acc} value={acc}>ACC: {acc}</option>
+                      ))}
+                  </select>
+                  <div className="w-px h-4 mx-1 break-hidden border-0" style={{ background: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
+              </>
+          )}
+
+          <button
+            onClick={(e) => { e.stopPropagation(); setIsAWSModalOpen(true); }}
+            className="flex items-center gap-2 px-3 h-8 rounded-md cursor-pointer border-0 text-xs font-semibold"
+            style={{
+              background: 'linear-gradient(to right, rgba(249, 115, 22, 0.1), rgba(245, 158, 11, 0.1))',
+              color: '#f97316',
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = 'linear-gradient(to right, rgba(249, 115, 22, 0.2), rgba(245, 158, 11, 0.2))';
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = 'linear-gradient(to right, rgba(249, 115, 22, 0.1), rgba(245, 158, 11, 0.1))';
+            }}
+          >
+            <span>Connect AWS</span>
+          </button>
       </div>
 
       {/* HUD & Legend overlays restored from IsometricCanvas */}
@@ -571,6 +621,13 @@ export default function App() {
       {isSimulationMode && (
         <PlanningPanel theme={theme} />
       )}
+      
+      <AWSSyncModal 
+        isOpen={isAWSModalOpen} 
+        onClose={() => setIsAWSModalOpen(false)} 
+        onSuccess={() => window.location.reload()} 
+        theme={theme}
+      />
     </div>
   );
 }

@@ -16,11 +16,11 @@ from typing import Any, Dict, List
 from fastapi import FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-
 import traceback
 from .models import InfraGraph, Node, Edge
 from .database import db
 from .analysis.api import router as analysis_router
+from .api.aws_ingestion import router as aws_router
 
 app = FastAPI(
     title="Infradian Data Engine",
@@ -127,15 +127,37 @@ async def get_graph() -> dict:
         raise HTTPException(status_code=500, detail=f"Graph retrieval failed: {str(e)}")
 
 
-@app.get("/api/v1/nodes")
-async def get_nodes() -> Dict[str, Any]:
-    """Return all nodes and edges from Neo4j in a graph structure."""
+@app.get("/api/v1/accounts")
+async def get_accounts() -> List[str]:
+    """Return a list of all distinct account_ids successfully tracked in Neo4j."""
     try:
-        nodes_query = "MATCH (n:Resource) RETURN properties(n) as props"
-        edges_query = "MATCH (a:Resource)-[r]->(b:Resource) RETURN properties(r) as props, type(r) as rel_type, a.id as source_id, b.id as target_id"
+        query = "MATCH (n:Resource) WHERE n.account_id IS NOT NULL RETURN DISTINCT n.account_id as account_id"
+        results = db.query(query)
+        if not results:
+            return []
+        return [r["account_id"] for r in results]
+    except Exception as e:
+        logger.error(f"Failed to fetch accounts: {e}")
+        return []
+
+@app.get("/api/v1/nodes")
+async def get_nodes(account_id: Optional[str] = None) -> Dict[str, Any]:
+    """Return all nodes and edges from Neo4j in a graph structure, optionally filtered by account. If account_id is 'all', return everything."""
+    try:
+        nodes_where = ""
+        edges_where = ""
+        params = {}
+        if account_id and account_id != "all":
+            nodes_where = "WHERE n.account_id = $acc_id"
+            # Return edges only if both source and target are in the same filtered account scope
+            edges_where = "WHERE a.account_id = $acc_id AND b.account_id = $acc_id"
+            params = {"acc_id": account_id}
+            
+        nodes_query = f"MATCH (n:Resource) {nodes_where} RETURN DISTINCT properties(n) as props"
+        edges_query = f"MATCH (a:Resource)-[r]->(b:Resource) {edges_where} RETURN DISTINCT properties(r) as props, type(r) as rel_type, a.id as source_id, b.id as target_id"
         
-        nodes_raw = db.query(nodes_query)
-        edges_raw = db.query(edges_query)
+        nodes_raw = db.query(nodes_query, parameters=params)
+        edges_raw = db.query(edges_query, parameters=params)
         if nodes_raw is None or edges_raw is None:
             raise Exception("Neo4j unavailable")
         
@@ -420,4 +442,5 @@ async def get_sample_graph() -> JSONResponse:
     return JSONResponse(content=graph.model_dump(mode="json"))
 
 app.include_router(analysis_router, prefix="/api/v1")
+app.include_router(aws_router, prefix="/api/v1")
 
