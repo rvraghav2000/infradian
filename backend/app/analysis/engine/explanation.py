@@ -97,23 +97,27 @@ def explain_action(
     context: Dict[str, Any],
 ) -> str:
     """Generate a one-sentence explanation for a ranked action item."""
-    if action_type == "risk":
+    if action_type == "FIX":
         is_spof = context.get("is_spof", False)
         blast = context.get("blast_severity", 0)
         spof_note = " and is a single point of failure" if is_spof else ""
         severity = "high" if score > 0.7 else "moderate" if score > 0.3 else "low"
         return f"{label} ({node_id}) has {severity} risk (blast: {blast:.0%}){spof_note}."
 
-    if action_type == "safe_delete":
+    if action_type == "DELETE":
         cost = context.get("monthly_cost", 0)
         evidence = context.get("evidence", [])
         reason = evidence[0] if evidence else "low utilization"
         cost_note = f" — saves ${cost:.0f}/mo" if cost > 0 else ""
-        return f"{label} ({node_id}) can be safely removed: {reason}{cost_note}."
+        return f"Delete this node to save space{cost_note}: {reason}."
 
-    if action_type == "waste":
+    if action_type == "OPTIMIZE":
         cost = context.get("monthly_cost", 0)
         usage = context.get("usage_score", 0)
-        return f"{label} ({node_id}) is underutilized ({usage:.0%} usage) at ${cost:.0f}/mo."
+        return f"Optimize {label} ({node_id}) — it is underutilized ({usage:.0%} usage) at ${cost:.0f}/mo."
+        
+    if action_type == "INVESTIGATE":
+        confidence = context.get("confidence", 0)
+        return f"Investigate {label} ({node_id}): dependency evidence is weak (confidence: {confidence:.0%})."
 
     return f"{label} ({node_id}): score {score:.2f}."

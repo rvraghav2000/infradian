@@ -419,38 +419,5 @@ async def get_sample_graph() -> JSONResponse:
     graph = InfraGraph.model_validate(payload)
     return JSONResponse(content=graph.model_dump(mode="json"))
 
-from pydantic import BaseModel
-
-class BlastRadiusRequest(BaseModel):
-    source_node_id: str
-    max_hops: int = 5
-    direction: str = "both"
-
-@app.post("/api/v1/blast-radius")
-async def calculate_blast_radius(req: BlastRadiusRequest) -> dict:
-    from .blast_radius import run_blast_radius
-    import traceback
-    try:
-        nodes_edges = await get_nodes()
-        nodes = nodes_edges.get("nodes", [])
-        edges = nodes_edges.get("edges", [])
-        
-        source_id = req.source_node_id
-        node_id_to_use = source_id
-        
-        # Safe ID mapping if the UI sends terraform-style IDs instead of sample IDs
-        if not any(n.get("id") == source_id for n in nodes):
-            if "aws_db_instance" in source_id: node_id_to_use = "rds-001"
-            elif "aws_instance" in source_id and "web" in source_id: node_id_to_use = "ec2-web-1"
-            elif "aws_instance" in source_id and "app" in source_id: node_id_to_use = "ec2-app-1"
-            elif "aws_subnet" in source_id and "pub" in source_id: node_id_to_use = "subnet-pub-1"
-            elif "aws_subnet" in source_id and "priv" in source_id: node_id_to_use = "subnet-priv-1"
-            elif "aws_vpc" in source_id: node_id_to_use = "vpc-001"
-                
-        return run_blast_radius(node_id_to_use, nodes, edges, max_hops=req.max_hops, direction=req.direction)
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
 app.include_router(analysis_router, prefix="/api/v1")
 

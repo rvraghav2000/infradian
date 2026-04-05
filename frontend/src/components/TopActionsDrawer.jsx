@@ -5,7 +5,7 @@ import { useAnalysis } from '../context/AnalysisContext';
 
 export default function TopActionsDrawer({ theme = 'light', onNodeSelect }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [activeSection, setActiveSection] = useState('risks');
+  const [activeSection, setActiveSection] = useState('fix');
   const isDark = theme === 'dark';
 
   const { topActions, topActionsLoading, loadTopActions } = useAnalysis();
@@ -16,16 +16,18 @@ export default function TopActionsDrawer({ theme = 'light', onNodeSelect }) {
   }, [loadTopActions]);
 
   const sections = [
-    { id: 'risks', label: 'Risks', icon: '🔴', color: '#FF3B30' },
-    { id: 'deletions', label: 'Safe to Delete', icon: '🟢', color: '#34C759' },
-    { id: 'waste', label: 'Waste', icon: '🟡', color: '#FF9500' },
+    { id: 'fix', label: 'Risks', icon: '🔴', color: '#FF3B30' },
+    { id: 'delete', label: 'Safe Deletes', icon: '🟢', color: '#34C759' },
+    { id: 'optimize', label: 'Waste', icon: '🟡', color: '#FF9500' },
+    { id: 'investigate', label: 'Unknowns', icon: '🔎', color: '#007AFF' },
   ];
 
   const getItems = () => {
     if (!topActions) return [];
-    if (activeSection === 'risks') return topActions.topRisks || [];
-    if (activeSection === 'deletions') return topActions.safeDeletionCandidates || [];
-    if (activeSection === 'waste') return topActions.wasteCandidates || [];
+    if (activeSection === 'fix') return topActions.topRisks || [];
+    if (activeSection === 'delete') return topActions.safeDeletionCandidates || [];
+    if (activeSection === 'optimize') return topActions.wasteCandidates || [];
+    if (activeSection === 'investigate') return topActions.investigationCandidates || [];
     return [];
   };
 
@@ -36,19 +38,19 @@ export default function TopActionsDrawer({ theme = 'light', onNodeSelect }) {
       {/* Toggle button */}
       <button
         onClick={() => setIsOpen(p => !p)}
-        className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all"
+        className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all border-0 shadow cursor-pointer"
         style={{
-          background: isDark ? 'rgba(44,44,46,0.9)' : 'rgba(255,255,255,0.9)',
+          background: isDark ? 'rgba(44,44,46,0.95)' : 'rgba(255,255,255,0.95)',
           border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
           backdropFilter: 'blur(20px) saturate(1.8)',
           WebkitBackdropFilter: 'blur(20px) saturate(1.8)',
-          boxShadow: isDark ? '0 4px 16px rgba(0,0,0,0.4)' : '0 2px 10px rgba(0,0,0,0.06)',
+          boxShadow: isDark ? '0 4px 16px rgba(0,0,0,0.6)' : '0 4px 16px rgba(0,0,0,0.1)',
           color: isOpen ? '#007AFF' : (isDark ? '#aeaeb2' : '#86868b'),
         }}
       >
         <span>⚡</span>
         <span>Actions</span>
-        <span className="text-[9px] opacity-50">{isOpen ? '▼' : '▲'}</span>
+        <span className="text-[9px] opacity-50 ml-1">{isOpen ? '▼' : '▲'}</span>
       </button>
 
       {/* Drawer */}
@@ -60,19 +62,19 @@ export default function TopActionsDrawer({ theme = 'light', onNodeSelect }) {
             exit={{ y: 20, opacity: 0, height: 0 }}
             transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
             className="mb-2 overflow-hidden"
-            style={{ position: 'absolute', bottom: '100%', left: 0, width: 320 }}
+            style={{ position: 'absolute', bottom: '100%', left: 0, width: 340 }}
           >
             <GlassPanel intensity="high" className="border-white/10 shadow-2xl">
               {/* Section tabs */}
-              <div className="flex p-2 gap-1 mx-3 mt-3 bg-black/5 dark:bg-white/5 rounded-xl">
+              <div className="flex p-2 gap-1 mx-3 mt-3 bg-black/5 dark:bg-white/5 rounded-xl border border-white/5">
                 {sections.map(s => (
                   <button
                     key={s.id}
                     onClick={() => setActiveSection(s.id)}
-                    className={`flex-1 py-1.5 text-[9px] font-bold rounded-lg transition-all flex items-center justify-center gap-1 ${
+                    className={`flex-1 py-1.5 text-[9px] font-bold rounded-lg transition-all flex items-center justify-center gap-1 border-0 cursor-pointer ${
                       activeSection === s.id
-                        ? 'bg-white shadow-sm'
-                        : 'text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#fff]'
+                        ? 'bg-white dark:bg-[#1c1c1e] shadow-sm'
+                        : 'bg-transparent text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#fff]'
                     }`}
                     style={activeSection === s.id ? { color: s.color } : {}}
                   >
@@ -83,17 +85,17 @@ export default function TopActionsDrawer({ theme = 'light', onNodeSelect }) {
               </div>
 
               {/* Items */}
-              <div className="p-3 max-h-[280px] overflow-y-auto custom-scrollbar" style={{ overscrollBehavior: 'contain' }}>
+              <div className="p-3 max-h-[320px] overflow-y-auto custom-scrollbar" style={{ overscrollBehavior: 'contain' }}>
                 {topActionsLoading && (
                   <div className="flex flex-col gap-2">
                     {[1, 2, 3].map(i => (
-                      <div key={i} className="h-14 rounded-xl bg-white/5 animate-pulse" />
+                      <div key={i} className="h-20 rounded-xl bg-black/5 dark:bg-white/5 animate-pulse" />
                     ))}
                   </div>
                 )}
 
                 {!topActionsLoading && items.length === 0 && (
-                  <p className="text-[10px] text-center opacity-40 py-4">No items found.</p>
+                  <p className="text-[10px] text-center opacity-40 py-8 font-medium">No actions needed here.</p>
                 )}
 
                 <AnimatePresence mode="wait">
@@ -107,33 +109,57 @@ export default function TopActionsDrawer({ theme = 'light', onNodeSelect }) {
                   >
                     {items.map((item, i) => (
                       <button
-                        key={item.nodeId || i}
+                        key={item.id || i}
                         onClick={() => {
                           if (onNodeSelect) onNodeSelect(item.nodeId);
                           setIsOpen(false);
                         }}
-                        className="text-left p-3 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 transition-all flex flex-col gap-1.5"
+                        className="text-left p-3 rounded-xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 hover:bg-black/10 dark:hover:bg-white/10 transition-all flex flex-col gap-1.5 cursor-pointer"
                       >
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-semibold truncate max-w-[180px]" style={{ color: isDark ? '#fff' : '#1d1d1f' }}>
-                            {item.label || item.nodeId}
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-bold truncate flex-1" style={{ color: isDark ? '#fff' : '#1d1d1f' }}>
+                            {item.title || item.nodeId}
                           </span>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {item.costDelta > 0 && (
+                              <span className="text-[10px] font-bold text-[#34C759] bg-[#34C759]/10 px-1.5 py-0.5 rounded">
+                                +${item.costDelta.toFixed(0)}/mo
+                              </span>
+                            )}
                             <GlassBadge color={
-                              activeSection === 'risks' ? '#FF3B30' :
-                              activeSection === 'deletions' ? '#34C759' : '#FF9500'
+                              activeSection === 'fix' ? '#FF3B30' :
+                              activeSection === 'delete' ? '#34C759' : 
+                              activeSection === 'optimize' ? '#FF9500' : '#007AFF'
                             }>
                               {(item.score * 100).toFixed(0)}
                             </GlassBadge>
-                            <span className="text-[9px] text-[#86868b]">{(item.confidence * 100).toFixed(0)}%</span>
                           </div>
                         </div>
+                        
                         {item.summary && (
-                          <p className="text-[9px] leading-snug opacity-60 line-clamp-2">{item.summary}</p>
+                          <p className="text-[10px] leading-snug opacity-70 mb-0.5">{item.summary}</p>
                         )}
-                        {item.monthlyCost > 0 && (
-                          <span className="text-[9px] font-medium text-[#FF9500]">${item.monthlyCost.toFixed(0)}/mo</span>
-                        )}
+                        
+                        <div className="flex items-center gap-2 mt-1">
+                           <div className="flex items-center gap-1.5 flex-1 w-full bg-black/10 dark:bg-white/10 p-1.5 rounded-lg">
+                               <span className="text-[9px] font-bold uppercase text-[#86868b] w-8">Conf</span>
+                               <div className="flex-1 h-1.5 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
+                                  <div 
+                                    className="h-full rounded-full" 
+                                    style={{ 
+                                        width: `${(item.confidence * 100)}%`,
+                                        background: item.confidence > 0.7 ? '#34C759' : item.confidence > 0.4 ? '#FF9500' : '#FF3B30'
+                                    }} 
+                                  />
+                               </div>
+                           </div>
+                           
+                           {item.affectedSystems > 0 && (
+                               <span className="text-[9px] font-medium text-[#FF3B30] whitespace-nowrap">
+                                   {item.affectedSystems} affected
+                               </span>
+                           )}
+                        </div>
                       </button>
                     ))}
                   </motion.div>

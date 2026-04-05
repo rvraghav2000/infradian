@@ -36,11 +36,13 @@ class ActionRanker:
         top_risks = self._rank_risks(importance_map, limit)
         safe_deletions = self._rank_safe_deletions(safe_delete_engine, importance_map, limit)
         waste = self._rank_waste(limit)
+        investigations = self._rank_investigations(limit)
 
         return {
             "topRisks": top_risks,
             "safeDeletionCandidates": safe_deletions,
             "wasteCandidates": waste,
+            "investigationCandidates": investigations,
         }
 
     def _rank_risks(self, importance_map: dict, limit: int) -> List[dict]:
@@ -87,17 +89,24 @@ class ActionRanker:
             confidence = self.confidence_model.compute_overall(node_id)
 
             results.append({
+                "id": f"fix-{node_id}",
                 "nodeId": node_id,
-                "label": node.label,
-                "score": round(composite, 3),
-                "confidence": round(confidence, 3),
-                "isSpof": is_spof,
-                "blastSeverity": round(blast_severity, 3),
-                "summary": explain_action("risk", node_id, node.label, composite, {
+                "actionType": "FIX",
+                "title": f"Fix Critical Risk on {node.label}",
+                "summary": explain_action("FIX", node_id, node.label, composite, {
                     "blast_severity": blast_severity,
                     "importance": importance,
                     "is_spof": is_spof,
                 }),
+                "score": round(composite, 3),
+                "confidence": round(confidence, 3),
+                "impactScore": round(blast_severity, 3),
+                "costDelta": 0,
+                "priorityLevel": "High" if composite > 0.7 else "Medium",
+                "reasons": ["High downstream impact", "SPOF detected"] if is_spof else ["High downstream impact"],
+                "blockers": [],
+                "affectedSystems": len(traversal.reachable) - 1,
+                "recommendedNextStep": "Investigate downstream paths and add redundancy"
             })
 
         results.sort(key=lambda x: x["score"], reverse=True)
@@ -106,10 +115,7 @@ class ActionRanker:
     def _rank_safe_deletions(
         self, engine: SafeDeleteEngine, importance_map: dict, limit: int
     ) -> List[dict]:
-        """Rank safe-to-delete candidates.
-
-        Score = 0.4×evidence_score + 0.3×cost_opportunity + 0.3×confidence
-        """
+        """Rank safe-to-delete candidates."""
         results = []
 
         for node_id in self.graph.node_ids:
@@ -132,26 +138,30 @@ class ActionRanker:
             )
 
             results.append({
+                "id": f"del-{node_id}",
                 "nodeId": node_id,
-                "label": node.label,
-                "score": round(composite, 3),
-                "confidence": round(confidence, 3),
-                "monthlyCost": node.monthly_cost,
-                "evidenceReasons": decision["evidenceReasons"],
-                "summary": explain_action("safe_delete", node_id, node.label, composite, {
+                "actionType": "DELETE",
+                "title": f"Safely Delete {node.label}",
+                "summary": explain_action("DELETE", node_id, node.label, composite, {
                     "monthly_cost": node.monthly_cost,
                     "evidence": decision["evidenceReasons"],
                 }),
+                "score": round(composite, 3),
+                "confidence": round(confidence, 3),
+                "impactScore": 0,
+                "costDelta": node.monthly_cost,
+                "priorityLevel": "Medium",
+                "reasons": decision["evidenceReasons"],
+                "blockers": decision["blockerReasons"],
+                "affectedSystems": 0,
+                "recommendedNextStep": "Simulate removal, then apply terraform destroy"
             })
 
         results.sort(key=lambda x: x["score"], reverse=True)
         return results[:limit]
 
     def _rank_waste(self, limit: int) -> List[dict]:
-        """Rank waste candidates.
-
-        Score = 0.5×cost_inefficiency + 0.3×low_usage + 0.2×low_traffic
-        """
+        """Rank waste candidates."""
         results = []
 
         for node_id in self.graph.node_ids:
@@ -170,22 +180,68 @@ class ActionRanker:
                 + 0.30 * low_usage
                 + 0.20 * low_traffic
             )
+            
+            # Require at least some inefficiency to be considered waste
+            if composite < 0.2:
+                continue
 
             confidence = self.confidence_model.compute_overall(node_id)
 
             results.append({
+                "id": f"opt-{node_id}",
                 "nodeId": node_id,
-                "label": node.label,
-                "score": round(composite, 3),
-                "confidence": round(confidence, 3),
-                "monthlyCost": node.monthly_cost,
-                "usageScore": node.usage_score,
-                "summary": explain_action("waste", node_id, node.label, composite, {
+                "actionType": "OPTIMIZE",
+                "title": f"Optimize Resources for {node.label}",
+                "summary": explain_action("OPTIMIZE", node_id, node.label, composite, {
                     "monthly_cost": node.monthly_cost,
                     "usage_score": node.usage_score,
                     "traffic_score": node.traffic_score,
                 }),
+                "score": round(composite, 3),
+                "confidence": round(confidence, 3),
+                "impactScore": round(1.0 - low_traffic, 3),
+                "costDelta": round(node.monthly_cost * cost_ineff, 2),
+                "priorityLevel": "Low",
+                "reasons": [f"Usage is only {node.usage_score*100:.0f}%"],
+                "blockers": [],
+                "affectedSystems": 0,
+                "recommendedNextStep": "Downsize instance or move to serverless"
             })
 
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return results[:limit]
+        
+    def _rank_investigations(self, limit: int) -> List[dict]:
+        """Rank nodes that need investigation due to extreme low confidence."""
+        results = []
+        for node_id in self.graph.node_ids:
+            node = self.graph.get_node(node_id)
+            if not node: continue
+            
+            confidence = self.confidence_model.compute_overall(node_id)
+            if confidence > 0.4:
+                continue # Only investigate low confidence items
+                
+            composite = 1.0 - confidence
+            
+            results.append({
+                "id": f"inv-{node_id}",
+                "nodeId": node_id,
+                "actionType": "INVESTIGATE",
+                "title": f"Investigate Unknowns on {node.label}",
+                "summary": explain_action("INVESTIGATE", node_id, node.label, composite, {
+                    "confidence": confidence
+                }),
+                "score": round(composite, 3),
+                "confidence": round(confidence, 3),
+                "impactScore": 0,
+                "costDelta": 0,
+                "priorityLevel": "Medium" if confidence < 0.2 else "Low",
+                "reasons": ["Missing telemetry", "Weak dependency metadata"],
+                "blockers": [],
+                "affectedSystems": 0,
+                "recommendedNextStep": "Add Datadog/Cloudwatch tags to collect metrics"
+            })
+            
         results.sort(key=lambda x: x["score"], reverse=True)
         return results[:limit]
