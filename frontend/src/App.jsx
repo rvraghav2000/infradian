@@ -16,6 +16,7 @@ const PALETTE_ITEMS = [
 import { AnalysisProvider, useAnalysis } from './context/AnalysisContext';
 import AnalysisPanel from './components/AnalysisPanel';
 import SimulationSummary from './components/SimulationSummary';
+import TopActionsDrawer from './components/TopActionsDrawer';
 
 export default function App() {
   const [rawData, setRawData] = useState({ nodes: [], edges: [] });
@@ -31,9 +32,7 @@ export default function App() {
   const [hoveredEdgeId, setHoveredEdgeId] = useState(null);
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
   const [theme, setTheme] = useState('light');
-  const { isSimulationMode, setIsSimulationMode, simulationData } = useAnalysis();
-  const [blastRadiusData, setBlastRadiusData] = useState(null);
-  const [blastLoading, setBlastLoading] = useState(false);
+  const { isSimulationMode, setIsSimulationMode, blastRadius, clearAnalysis } = useAnalysis();
   const [isAnalysisOpen, setIsAnalysisOpen] = useState(false);
   const initialLayoutPerformed = useRef(false);
 
@@ -97,32 +96,10 @@ export default function App() {
     setExpandedNodeId(null);
     setIsAnalysisOpen(false);
     setPanOffset({ x: 0, y: 0 });
-    setBlastRadiusData(null);
-  }, []);
+    clearAnalysis();
+  }, [clearAnalysis]);
 
-  /* ── Backend Blast radius Data Fetch ─────────────────────────── */
-  useEffect(() => {
-    if (!focusedNodeId || focusedNodeId.startsWith('planned-')) {
-      setBlastRadiusData(null);
-      return;
-    }
-    
-    setBlastLoading(true);
-    fetch('/api/v1/blast-radius', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source_node_id: focusedNodeId, max_hops: 5, direction: 'downstream' })
-    })
-    .then(r => r.ok ? r.json() : null)
-    .then(data => {
-      setBlastRadiusData(data);
-      setBlastLoading(false);
-    })
-    .catch(e => {
-      console.error("Failed to fetch blast radius:", e);
-      setBlastLoading(false);
-    });
-  }, [focusedNodeId]);
+  /* ── Backend v2 analysis is now loaded by AnalysisPanel via context ── */
 
   /* ── Node Drop from PlanningPanel (graph-space coords) ───────── */
   const handleNodeDrop = useCallback(async (primitiveData, graphX, graphY) => {
@@ -495,9 +472,9 @@ export default function App() {
                  className="absolute top-0 left-0 transition-opacity duration-500"
                  style={{ 
                    willChange: 'transform',
-                   opacity: blastRadiusData && blastRadiusData.impacted_nodes 
-                            && !blastRadiusData.impacted_nodes.some(n => n.id === node.id) 
-                            && node.id !== focusedNodeId ? 0.25 : 1,
+                   opacity: blastRadius?.impactedNodes 
+                            && !blastRadius.impactedNodes.some(n => String(n.id) === String(node.id)) 
+                            && String(node.id) !== String(blastRadius.nodeId) ? 0.25 : 1,
                    // Region nodes need explicit dimensions so their children can use width: 100%
                    ...(isRegion ? {
                      width: 'var(--region-w, 200px)',
@@ -524,7 +501,16 @@ export default function App() {
         </div>
       </div>
 
-      {/* Node Details Modal Removed - Sidebar is now primary detail view */}
+      {/* Top Actions Drawer */}
+      {!focusedNodeId && (
+        <TopActionsDrawer 
+          theme={theme} 
+          onNodeSelect={(nodeId) => {
+            setFocusedNodeId(nodeId);
+            setIsAnalysisOpen(true);
+          }}
+        />
+      )}
 
       {/* Focus indicator */}
       {focusedNodeId && (
@@ -567,8 +553,7 @@ export default function App() {
       <AnimatePresence>
         {focusedNodeId && isAnalysisOpen && !focusedNodeId.startsWith('planned-') && (
             <AnalysisPanel 
-                node={rawData.nodes.find(n => n.id === focusedNodeId)}
-                blastRadius={blastRadiusData}
+                node={rawData.nodes.find(n => String(n.id) === String(focusedNodeId))}
                 theme={theme}
                 onClose={() => clearFocus()}
             />
@@ -578,14 +563,7 @@ export default function App() {
       {/* Simulation Summary (Draft Mode) */}
       <AnimatePresence>
         {isSimulationMode && (
-            <SimulationSummary 
-                deltaData={simulationData || {
-                    riskReduction: 0,
-                    costDelta: 0,
-                    criticalImpact: false
-                }}
-                theme={theme}
-            />
+            <SimulationSummary theme={theme} />
         )}
       </AnimatePresence>
 

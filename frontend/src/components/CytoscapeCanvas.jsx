@@ -113,23 +113,70 @@ const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onCanvasClick,
     fit: false
   }), []);
 
-  // ── Apply Node Highlighting (Reset styles) ───────────────────────────
+  // ── Analysis-driven graph highlighting ─────────────────────────────
+  const { blastRadius, activePath, activePathStep } = useAnalysis();
+
   useEffect(() => {
     if (!cyRef.current) return;
     const cy = cyRef.current;
 
     cy.batch(() => {
-      // Reset everything first
-      cy.elements().removeClass('overlay-active highlight-path dimmed-node');
-      cy.elements().style({
-        'overlay-opacity': 0,
+      // Reset all edges to default
+      cy.edges().style({
         'width': 1.5,
         'line-color': '#007AFF',
         'target-arrow-color': '#007AFF',
-        'border-width': 0
+        'line-style': 'dashed',
+        'line-dash-pattern': [8, 6],
+        'opacity': 1,
       });
+
+      // ── Path highlighting (takes priority) ──────────────────────
+      if (activePath?.path?.length > 1) {
+        // Dim all edges first
+        cy.edges().style({ 'opacity': 0.15 });
+        // Highlight path edges
+        for (let i = 0; i < activePath.path.length - 1; i++) {
+          const src = String(activePath.path[i]);
+          const tgt = String(activePath.path[i + 1]);
+          const pathEdges = cy.edges().filter(e =>
+            e.data('source') === src && e.data('target') === tgt
+          );
+          const isCurrentHop = i === activePathStep;
+          pathEdges.style({
+            'width': isCurrentHop ? 4 : 2.5,
+            'line-color': isCurrentHop ? '#007AFF' : '#5AC8FA',
+            'target-arrow-color': isCurrentHop ? '#007AFF' : '#5AC8FA',
+            'line-style': 'solid',
+            'opacity': 1,
+          });
+        }
+        return; // Skip blast highlighting when path is active
+      }
+
+      // ── Blast radius edge highlighting ──────────────────────────
+      if (blastRadius?.impactedNodes?.length > 0) {
+        const impactedIds = new Set(blastRadius.impactedNodes.map(n => String(n.id)));
+        const sourceId = String(blastRadius.nodeId);
+        impactedIds.add(sourceId);
+        cy.edges().forEach(edge => {
+          const src = edge.data('source');
+          const tgt = edge.data('target');
+          if (impactedIds.has(src) && impactedIds.has(tgt)) {
+            edge.style({
+              'width': 2.5,
+              'line-color': '#FF3B30',
+              'target-arrow-color': '#FF3B30',
+              'line-style': 'solid',
+              'opacity': 1,
+            });
+          } else {
+            edge.style({ 'opacity': 0.2 });
+          }
+        });
+      }
     });
-  }, [theme, graphData]);
+  }, [blastRadius, activePath, activePathStep, theme, graphData]);
 
   if (cyElements.length === 0) return <div style={{ padding: '20px' }}>Loading Infrastructure Map...</div>;
 

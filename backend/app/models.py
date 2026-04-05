@@ -139,6 +139,40 @@ class Node(BaseModel):
         description="Raw configuration attributes extracted from terraform.",
     )
 
+    # ── Analysis engine fields (all optional, backward-compatible) ────
+    environment: str = Field(
+        default="production",
+        description="Deployment environment: production, staging, dev.",
+    )
+    business_function: str = Field(
+        default="general",
+        description="Business domain this resource supports.",
+    )
+    traffic_score: float = Field(
+        default=0.5, ge=0.0, le=1.0,
+        description="Normalized traffic importance (0=none, 1=critical path).",
+    )
+    usage_score: float = Field(
+        default=0.5, ge=0.0, le=1.0,
+        description="Normalized utilization (0=idle, 1=fully used).",
+    )
+    monthly_cost: float = Field(
+        default=0.0, ge=0.0,
+        description="Estimated monthly cost in USD.",
+    )
+    criticality: str = Field(
+        default="medium",
+        description="Criticality tier: critical, high, medium, low.",
+    )
+    redundancy_level: int = Field(
+        default=0, ge=0,
+        description="Number of redundant replicas or failover targets.",
+    )
+    last_seen_at: Optional[datetime] = Field(
+        default=None,
+        description="Last time telemetry was received from this resource.",
+    )
+
 class Edge(BaseModel):
     """A directed dependency between two Nodes.
     
@@ -149,6 +183,28 @@ class Edge(BaseModel):
     target: str = Field(..., description="ID of the target node.")
     label: str = Field(default="DEPENDS_ON", description="The relationship type (e.g. 'CONNECTS_TO').")
     attributes: dict[str, Any] = Field(default_factory=dict, description="Metadata for the edge.")
+
+    # ── Analysis engine fields (all optional, backward-compatible) ────
+    dependency_mode: str = Field(
+        default="sync",
+        description="Dependency mode: sync, async, inferred, fallback, control_plane.",
+    )
+    confidence: float = Field(
+        default=1.0, ge=0.0, le=1.0,
+        description="Confidence that this dependency actually exists.",
+    )
+    traffic_share: float = Field(
+        default=1.0, ge=0.0, le=1.0,
+        description="Fraction of traffic flowing through this edge.",
+    )
+    edge_weight: Optional[float] = Field(
+        default=None,
+        description="Explicit edge weight. Computed from other fields if None.",
+    )
+    last_validated_at: Optional[datetime] = Field(
+        default=None,
+        description="Last time this dependency was validated.",
+    )
 
 
 # ── Top-level payload ────────────────────────────────────────────────
