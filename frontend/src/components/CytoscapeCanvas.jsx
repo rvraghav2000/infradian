@@ -2,7 +2,7 @@ import React, { useMemo, useRef, useEffect } from 'react';
 import CytoscapeComponent from 'react-cytoscapejs';
 import cytoscape from 'cytoscape';
 import dagre from 'cytoscape-dagre';
-import { useAnalysis, OVERLAY_TYPES } from '../context/AnalysisContext';
+import { useAnalysis } from '../context/AnalysisContext';
 
 cytoscape.use(dagre);
 
@@ -10,7 +10,7 @@ cytoscape.use(dagre);
  * CytoscapeCanvas — Functional component to visualize infrastructure
  * strictly controlled by props passed from App.jsx.
  */
-const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onNodeDoubleClick, onCanvasClick, onNodeHover, onNodeDrop, theme = 'light' }) => {
+const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onCanvasClick, onNodeHover, onNodeDrop, theme = 'light' }) => {
   const cyRef = useRef(null);
   const zoomTextRef = useRef(null);
 
@@ -113,9 +113,7 @@ const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onNodeDoubleCl
     fit: false
   }), []);
 
-  const { activeOverlays } = useAnalysis();
-
-  // ── Apply Overlays & Highlighting ─────────────────────────────
+  // ── Apply Node Highlighting (Reset styles) ───────────────────────────
   useEffect(() => {
     if (!cyRef.current) return;
     const cy = cyRef.current;
@@ -130,46 +128,8 @@ const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onNodeDoubleCl
         'target-arrow-color': '#007AFF',
         'border-width': 0
       });
-
-      // Active Overlays (Risk, Cost, Traffic)
-      activeOverlays.forEach(type => {
-        cy.nodes().forEach(node => {
-          const data = node.data();
-          const attributes = data.attributes || {};
-
-          if (type === OVERLAY_TYPES.RISK) {
-            const risk = attributes.risk || 0;
-            if (risk > 30) {
-              node.style({
-                'overlay-color': risk > 70 ? '#FF3B30' : '#FF9500',
-                'overlay-opacity': 0.3,
-                'overlay-padding': 10 + (risk / 10)
-              });
-            }
-          } else if (type === OVERLAY_TYPES.COST) {
-            const cost = attributes.monthly_cost || 0;
-            if (cost > 50) {
-              node.style({
-                'border-width': 4,
-                'border-color': '#34C759',
-                'border-opacity': 0.5
-              });
-            }
-          }
-        });
-
-        if (type === OVERLAY_TYPES.TRAFFIC) {
-          cy.edges().style({
-            'width': 3,
-            'line-color': '#007AFF',
-            'target-arrow-color': '#007AFF',
-            'opacity': 1,
-            'line-dash-pattern': [10, 5],
-          });
-        }
-      });
     });
-  }, [activeOverlays, theme, graphData]);
+  }, [theme, graphData]);
 
   if (cyElements.length === 0) return <div style={{ padding: '20px' }}>Loading Infrastructure Map...</div>;
 
@@ -233,19 +193,7 @@ const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onNodeDoubleCl
 
             cy.on('tap', 'node', (e) => {
               const originalId = e.target.data('original_id') !== undefined ? e.target.data('original_id') : e.target.id();
-
-              const now = Date.now();
-              const lastTap = e.target.scratch('last_tap_time') || 0;
-
-              if (now - lastTap < 400) {
-                // Double Tap confirmed!
-                e.target.scratch('last_tap_time', 0);
-                if (onNodeDoubleClick) onNodeDoubleClick(originalId, e.originalEvent);
-              } else {
-                // Single Tap confirmed!
-                e.target.scratch('last_tap_time', now);
-                if (onNodeClick) onNodeClick(originalId, e.originalEvent);
-              }
+              if (onNodeClick) onNodeClick(originalId, e.originalEvent);
             });
 
 

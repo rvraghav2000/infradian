@@ -22,7 +22,6 @@ export default function InfraNode({
     focused = false,
     theme = 'light',
     onNodeClick,
-    onNodeDoubleClick,
     onNodeMouseDown,
     onGodModeSelect,
     expandedNodeId,
@@ -54,7 +53,6 @@ export default function InfraNode({
             hovered={hovered} setHovered={setHovered}
             dimmed={dimmed} focused={focused} theme={theme}
             onNodeClick={onNodeClick} 
-            onNodeDoubleClick={onNodeDoubleClick}
             onNodeMouseDown={onNodeMouseDown} 
             isExpanded={isExpanded}
             onGodModeSelect={onGodModeSelect} isDragging={isDragging}
@@ -159,7 +157,7 @@ function RegionNode({ layout, meta, dimmed, focused, theme, onNodeMouseDown, isD
 
 function CardNode({
     layout, meta, lp, hovered, setHovered,
-    dimmed, focused, theme, onNodeClick, onNodeDoubleClick, onNodeMouseDown, onGodModeSelect, isExpanded, isDragging, isRemovalCandidate,
+    dimmed, focused, theme, onNodeClick, onNodeMouseDown, onGodModeSelect, isExpanded, isDragging, isRemovalCandidate,
 }) {
     const { x, y, w, h, node } = layout;
     const events = node.history || [];
@@ -189,14 +187,6 @@ function CardNode({
                 transition: isDragging ? 'none' : 'transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.15), width 0.3s ease',
             }}
         >
-            {/* ── Hover Preview Tooltip ──────────────────────────────────── */}
-            <AnimatePresence>
-                {hovered && !isDragging && !isExpanded && (
-                    <div className="absolute left-1/2 -translate-x-1/2" style={{ top: -140, pointerEvents: 'none' }}>
-                        <NodeHoverPreview node={node} theme={theme} />
-                    </div>
-                )}
-            </AnimatePresence>
 
             {/* ── Compact card (always visible) ─────────────────────────── */}
             <div
@@ -296,46 +286,7 @@ function CardNode({
                 )}
             </div>
 
-            {/* ── Hover action bar ──────────────────────────────────────── */}
-            <AnimatePresence>
-                {hovered && !isExpanded && !dimmed && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -4 }}
-                        transition={{ duration: 0.12 }}
-                        className="absolute flex items-center gap-1"
-                        style={{
-                            bottom: -32,
-                            left: 0,
-                            right: 0,
-                            justifyContent: 'center',
-                            zIndex: 60,
-                            pointerEvents: 'auto', // Buttons MUST be clickable!
-                        }}
-                    >
-                        <ActionButton
-                            icon="📋"
-                            label="Pipelines"
-                            count={events.length}
-                            isDark={isDark}
-                            onClick={(e) => { e.stopPropagation(); onNodeClick && onNodeClick(node.id, e); }}
-                        />
-                        <ActionButton
-                            icon="📊"
-                            label="Metrics"
-                            isDark={isDark}
-                            onClick={(e) => { e.stopPropagation(); }}
-                        />
-                        <ActionButton
-                            icon="⚙️"
-                            label="Config"
-                            isDark={isDark}
-                            onClick={(e) => { e.stopPropagation(); onGodModeSelect && onGodModeSelect(node.id, e); }}
-                        />
-                    </motion.div>
-                )}
-            </AnimatePresence>
+            {/* Hover action bar removed - sidebar now opens immediately on click */}
 
             {/* ── Expanded pipeline panel (slides open below) ────────── */}
             <AnimatePresence>
@@ -426,33 +377,7 @@ function CardNode({
 
 /* ── Hover action button ───────────────────────────────────────── */
 
-function ActionButton({ icon, label, count, onClick, isDark }) {
-    return (
-        <button
-            onClick={onClick}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg cursor-pointer border-0 text-[10px] font-medium"
-            style={{
-                background: isDark ? 'rgba(44,44,46,0.92)' : 'rgba(255,255,255,0.92)',
-                border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
-                color: isDark ? '#e5e5ea' : '#1d1d1f',
-                backdropFilter: 'blur(12px)',
-                WebkitBackdropFilter: 'blur(12px)',
-                boxShadow: isDark ? '0 2px 8px rgba(0,0,0,0.4)' : '0 2px 8px rgba(0,0,0,0.06)',
-                transition: 'background 0.15s ease',
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = isDark ? 'rgba(10,132,255,0.15)' : 'rgba(0,122,255,0.08)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = isDark ? 'rgba(44,44,46,0.92)' : 'rgba(255,255,255,0.92)'; }}
-        >
-            <span>{icon}</span>
-            <span>{label}</span>
-            {count !== undefined && count > 0 && (
-                <span className="text-[8px] font-bold px-1 py-0.5 rounded-full" style={{ background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)', color: isDark ? '#aeaeb2' : '#86868b' }}>
-                    {count}
-                </span>
-            )}
-        </button>
-    );
-}
+/* ActionButton component removed */
 
 /* ── Time formatter ────────────────────────────────────────────── */
 

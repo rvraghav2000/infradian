@@ -31,6 +31,7 @@ export default function PlanningPanel({ theme }) {
                 initial={{ x: -320, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
                 exit={{ x: -320, opacity: 0 }}
+                className="fixed"
                 transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
                 style={{
                     position: 'fixed',
@@ -51,6 +52,7 @@ export default function PlanningPanel({ theme }) {
                         : '4px 0 24px rgba(0,0,0,0.06)',
                     overflowY: collapsed ? 'hidden' : 'auto',
                     overflowX: 'hidden',
+                    overscrollBehavior: 'contain',
                 }}
             >
                 {/* ── Scroll content — starts with clearance for the top chrome ── */}

@@ -2,8 +2,11 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import GlassPanel, { GlassBadge } from './GlassPanel';
 
+import { useAnalysis } from '../context/AnalysisContext';
+
 export default function AnalysisPanel({ node, blastRadius, theme = 'light', onClose }) {
     const [activeTab, setActiveTab] = useState('blast');
+    const { setIsSimulationMode, setSimulationData } = useAnalysis();
     const isDark = theme === 'dark';
 
     if (!node) return null;
@@ -33,7 +36,7 @@ export default function AnalysisPanel({ node, blastRadius, theme = 'light', onCl
                             {node.type.replace('aws_', '').replace('_', ' ')}
                         </span>
                     </div>
-                    <button 
+                    <button
                         onClick={onClose}
                         className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-white/10 transition-colors"
                     >
@@ -47,11 +50,10 @@ export default function AnalysisPanel({ node, blastRadius, theme = 'light', onCl
                         <button
                             key={t.id}
                             onClick={() => setActiveTab(t.id)}
-                            className={`flex-1 py-2 text-[10px] font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                                activeTab === t.id 
-                                ? 'bg-white shadow-sm text-[#007AFF]' 
-                                : 'text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#fff]'
-                            }`}
+                            className={`flex-1 py-2 text-[10px] font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${activeTab === t.id
+                                    ? 'bg-white shadow-sm text-[#007AFF]'
+                                    : 'text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#fff]'
+                                }`}
                         >
                             <span>{t.icon}</span>
                             <span className="hidden sm:inline">{t.label}</span>
@@ -60,7 +62,7 @@ export default function AnalysisPanel({ node, blastRadius, theme = 'light', onCl
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto p-5 pb-8 custom-scrollbar">
+                <div className="flex-1 overflow-y-auto p-5 pb-8 custom-scrollbar" style={{ overscrollBehavior: 'contain' }}>
                     <AnimatePresence mode="wait">
                         <motion.div
                             key={activeTab}
@@ -86,9 +88,28 @@ export default function AnalysisPanel({ node, blastRadius, theme = 'light', onCl
                 </div>
 
                 {/* Footer Action */}
-                <div className="p-4 bg-white/5 border-t border-white/5">
-                    <button className="w-full py-2.5 bg-[#007AFF] text-white rounded-xl text-xs font-bold shadow-lg shadow-blue-500/20 active:scale-[0.98] transition-transform">
+                <div className="p-4 bg-white/5 border-t border-white/5 flex flex-col gap-2">
+                    <button
+                        onClick={() => {
+                            setIsSimulationMode(true);
+                            // Mock simulation data based on node attributes or types
+                            setSimulationData({
+                                riskReduction: node.attributes?.risk ? node.attributes.risk * 0.2 : 12.4,
+                                costDelta: -(node.attributes?.monthly_cost || 45.50),
+                                criticalImpact: blastRadius?.affected_count > 5
+                            });
+                        }}
+                        className="w-full py-2.5 bg-[#007AFF] text-white rounded-xl text-xs font-bold shadow-lg shadow-blue-500/20 active:scale-[0.98] transition-transform"
+                    >
                         Simulate Removal Impact
+                    </button>
+                    <button
+                        onClick={() => {
+                            alert(`Checking Deletion Safety for ${node.label}...\nAlgorithm provisioned. Contact Dev for implementation details.`);
+                        }}
+                        className="w-full py-2.5 bg-white/5 text-[#86868b] border border-white/10 rounded-xl text-xs font-bold hover:bg-white/10 active:scale-[0.98] transition-all"
+                    >
+                        Safe to Delete?
                     </button>
                 </div>
             </GlassPanel>
@@ -105,7 +126,7 @@ function OverviewTab({ node }) {
                     A primary {node.type} resource managing critical traffic for the production environment.
                 </p>
             </div>
-            
+
             <div className="grid grid-cols-2 gap-3">
                 <StatCard label="Status" value={node.status} color="#34C759" />
                 <StatCard label="Provider" value="AWS" />
@@ -148,7 +169,7 @@ function BlastTab({ node, blast }) {
                     <div key={n.id} className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/5">
                         <span className="text-xs font-medium truncate w-40">{n.label}</span>
                         <GlassBadge color={n.depth === 1 ? '#FF3B30' : '#FF9500'}>
-                             D{n.depth}
+                            D{n.depth}
                         </GlassBadge>
                     </div>
                 ))}
@@ -190,7 +211,7 @@ function CostTab({ node }) {
 function RecommendationTab({ node, blast }) {
     return (
         <div className="flex flex-col gap-4">
-             <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20 flex gap-3">
+            <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20 flex gap-3">
                 <span className="text-xl">🛡️</span>
                 <div className="flex flex-col gap-1">
                     <span className="text-[11px] font-bold text-blue-500">REDUCE RISK</span>

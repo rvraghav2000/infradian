@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import CytoscapeCanvas from './components/CytoscapeCanvas';
 import CommandPalette from './components/CommandPalette';
 import HistoryStack from './components/HistoryStack';
-import NodeDetailsModal from './components/NodeDetailsModal';
 import InfraNode from './components/InfraNode';
 import PlanningPanel from './components/PlanningPanel';
 import { NODE_CATEGORIES } from './layout';
@@ -15,7 +14,6 @@ const PALETTE_ITEMS = [
 
 
 import { AnalysisProvider, useAnalysis } from './context/AnalysisContext';
-import OverlayToggles from './components/OverlayToggles';
 import AnalysisPanel from './components/AnalysisPanel';
 import SimulationSummary from './components/SimulationSummary';
 
@@ -33,9 +31,10 @@ export default function App() {
   const [hoveredEdgeId, setHoveredEdgeId] = useState(null);
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
   const [theme, setTheme] = useState('light');
-  const { isSimulationMode, setIsSimulationMode } = useAnalysis();
+  const { isSimulationMode, setIsSimulationMode, simulationData } = useAnalysis();
   const [blastRadiusData, setBlastRadiusData] = useState(null);
   const [blastLoading, setBlastLoading] = useState(false);
+  const [isAnalysisOpen, setIsAnalysisOpen] = useState(false);
   const initialLayoutPerformed = useRef(false);
 
 
@@ -76,9 +75,10 @@ export default function App() {
 
   /* ── Node Handling ────────────────────────────────────────────── */
   const handleNodeClick = useCallback((nodeId, e) => {
-    // Single click now handles both focus and expansion
+    // Single click now handles both focus and opens analysis sidebar
     setFocusedNodeId(nodeId);
-    setExpandedNodeId(prev => prev === nodeId ? null : nodeId);
+    setExpandedNodeId(null); // Close any expanded pipeline cards
+    setIsAnalysisOpen(true); // Open analysis sidebar immediately
   }, []);
 
   /* ── God mode select → pan + focus ───────────────────────────── */
@@ -86,6 +86,7 @@ export default function App() {
     setFocusedNodeId(nodeId);
     setExpandedNodeId(null);
     setCmdKOpen(false);
+    setIsAnalysisOpen(true); // "Config" implies analysis view
     // Note: To pan precisely, we would need to ask Cytoscape for the node's position.
     // For now, selecting it simply focuses the node details without panning the canvas natively.
   }, []);
@@ -94,6 +95,7 @@ export default function App() {
   const clearFocus = useCallback(() => {
     setFocusedNodeId(null);
     setExpandedNodeId(null);
+    setIsAnalysisOpen(false);
     setPanOffset({ x: 0, y: 0 });
     setBlastRadiusData(null);
   }, []);
@@ -261,7 +263,6 @@ export default function App() {
         background: theme === 'dark' ? '#1c1c1e' : '#f5f5f7',
         color: theme === 'dark' ? 'rgba(255,255,255,0.85)' : '#1d1d1f'
       }}
-      onClick={() => { if (focusedNodeId) clearFocus(); }}
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes('application/infradian-node')) {
           e.preventDefault();
@@ -383,7 +384,6 @@ export default function App() {
 
           <div className="w-px h-4 mx-1" style={{ background: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
 
-          {/* Organize Button */}
           <button
             onClick={(e) => { e.stopPropagation(); applyAutoLayout(); }}
             className="flex items-center gap-2 px-3 h-8 rounded-md cursor-pointer border-0 text-xs font-semibold"
@@ -401,10 +401,6 @@ export default function App() {
           >
             <span>Organize Graph</span>
           </button>
-
-          <div className="w-px h-4 mx-1" style={{ background: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
-
-          <OverlayToggles theme={theme} />
       </div>
 
       {/* HUD & Legend overlays restored from IsometricCanvas */}
@@ -480,8 +476,7 @@ export default function App() {
         <CytoscapeCanvas 
           graphData={rawData}
           layoutTrigger={layoutTrigger}
-          onNodeClick={(id) => setFocusedNodeId(id)}
-          onNodeDoubleClick={(id) => handleNodeClick(id)}
+          onNodeClick={(id) => handleNodeClick(id)}
           onCanvasClick={() => clearFocus()}
           onNodeHover={setHoveredNodeId}
           onNodeDrop={handleNodeDrop}
@@ -520,7 +515,6 @@ export default function App() {
                    expandedNodeId={expandedNodeId}
                    theme={theme}
                    onNodeClick={handleNodeClick}
-                   onNodeDoubleClick={handleNodeClick}
                    onGodModeSelect={handleGodModeSelect}
                    physicsHovered={hoveredNodeId === node.id}
                  />
@@ -530,13 +524,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* Node Details Modal */}
-      <NodeDetailsModal 
-        nodeLayout={focusedNodeId && rawData.nodes.find(n => n.id === focusedNodeId) ? { node: rawData.nodes.find(n => n.id === focusedNodeId), w: 300 } : null} 
-        onClose={clearFocus}
-        onDelete={handleDeleteNode}
-        theme={theme}
-      />
+      {/* Node Details Modal Removed - Sidebar is now primary detail view */}
 
       {/* Focus indicator */}
       {focusedNodeId && (
@@ -572,16 +560,17 @@ export default function App() {
         isOpen={cmdKOpen}
         onClose={() => setCmdKOpen(false)}
         onSelect={handleGodModeSelect}
+        theme={theme}
       />
 
       {/* Analysis Panel */}
       <AnimatePresence>
-        {focusedNodeId && !focusedNodeId.startsWith('planned-') && (
+        {focusedNodeId && isAnalysisOpen && !focusedNodeId.startsWith('planned-') && (
             <AnalysisPanel 
                 node={rawData.nodes.find(n => n.id === focusedNodeId)}
                 blastRadius={blastRadiusData}
                 theme={theme}
-                onClose={() => setFocusedNodeId(null)}
+                onClose={() => clearFocus()}
             />
         )}
       </AnimatePresence>
@@ -590,9 +579,9 @@ export default function App() {
       <AnimatePresence>
         {isSimulationMode && (
             <SimulationSummary 
-                deltaData={{
-                    riskReduction: 12.4,
-                    costDelta: -145.50,
+                deltaData={simulationData || {
+                    riskReduction: 0,
+                    costDelta: 0,
                     criticalImpact: false
                 }}
                 theme={theme}
