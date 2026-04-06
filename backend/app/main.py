@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,6 +21,7 @@ from .models import InfraGraph, Node, Edge
 from .database import db
 from .analysis.api import router as analysis_router
 from .api.aws_ingestion import router as aws_router
+from .api.integrations import router as cloud_router
 
 app = FastAPI(
     title="Infradian Data Engine",
@@ -443,4 +444,5 @@ async def get_sample_graph() -> JSONResponse:
 
 app.include_router(analysis_router, prefix="/api/v1")
 app.include_router(aws_router, prefix="/api/v1")
+app.include_router(cloud_router, prefix="/api/v1")
 

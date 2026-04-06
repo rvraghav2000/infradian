@@ -33,28 +33,4 @@ export async function fetchTopActions(limit = 5) {
   return res.json();
 }
 
-export async function checkAWSStatus(credentials = {}) {
-  const res = await fetch('/api/v1/integrations/aws/status', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(credentials)
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.detail || `Status check failed: ${res.status}`);
-  }
-  return res.json();
-}
 
-export async function syncAWSData(credentials = {}) {
-  const res = await fetch('/api/v1/integrations/aws/sync', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(credentials)
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.detail || `AWS Sync failed: ${res.status}`);
-  }
-  return res.json();
-}

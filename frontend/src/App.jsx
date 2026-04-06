@@ -17,10 +17,11 @@ import { AnalysisProvider, useAnalysis } from './context/AnalysisContext';
 import AnalysisPanel from './components/AnalysisPanel';
 import SimulationSummary from './components/SimulationSummary';
 import TopActionsDrawer from './components/TopActionsDrawer';
-import AWSSyncModal from './components/AWSSyncModal';
+import CloudSettings from './components/CloudSettings';
 
 export default function App() {
   const [rawData, setRawData] = useState({ nodes: [], edges: [] });
+  const [draftData, setDraftData] = useState({ nodes: [], edges: [] });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   
@@ -35,7 +36,7 @@ export default function App() {
   const [theme, setTheme] = useState('light');
   const { isSimulationMode, setIsSimulationMode, blastRadius, clearAnalysis } = useAnalysis();
   const [isAnalysisOpen, setIsAnalysisOpen] = useState(false);
-  const [isAWSModalOpen, setIsAWSModalOpen] = useState(false);
+  const [isCloudSettingsOpen, setIsCloudSettingsOpen] = useState(false);
   const [accounts, setAccounts] = useState([]);
   const [selectedAccount, setSelectedAccount] = useState('all');
   const initialLayoutPerformed = useRef(false);
@@ -118,64 +119,38 @@ export default function App() {
     const newNode = {
       ...primitiveData,
       id: newId,
-      label: primitiveData.label || primitiveData.type,
-      parentId: null, // Default for now — in a future iteration this could be set by the drop target
+      label: `Draft ${primitiveData.label || primitiveData.type}`,
+      parentId: null, 
       parent_id: null,
+      status: 'pending', // Mark as pending
       attributes: {
         spawnX: graphX,
         spawnY: graphY,
       },
     };
 
-    setRawData(prev => ({
+    // Keep draft completely isolated in local state
+    setDraftData(prev => ({
       ...prev,
       nodes: [...prev.nodes, newNode]
     }));
-
-    try {
-      await fetch('/api/v1/nodes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newNode)
-      });
-    } catch(e) { console.error('Could not persist dropped node', e); }
-  }, []);
-
-  /* ── Drop Node (legacy — type-only drop from outer onDrop) ──── */
-  const handleDropToCanvas = useCallback(async (type) => {
-    // Determine target parent if any. For simplicity, drop as top-level orphan for now
-    const newId = `planned-${type.replace(/_/g, '-')}-${Math.floor(Math.random()*1000)}`;
-    const newNode = {
-      id: newId,
-      type: type,
-      label: `Draft ${NODE_CATEGORIES[type]?.label || type.replace('aws_', '')}`,
-      parentId: null,
-      status: 'live',
-      metrics: { current_load: 0 },
-      history: [],
-      attributes: {
-        spawnX: Math.random() * 200 + 400,
-        spawnY: Math.random() * 200 + 100
-      }
-    };
-
-    setRawData(prev => ({
-      ...prev,
-      nodes: [...prev.nodes, newNode]
-    }));
-
-    try {
-      await fetch('/api/v1/nodes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newNode)
-      });
-    } catch(e) { console.error("Could not persist node", e); }
   }, []);
 
   /* ── Delete Node ──────────────────────────────────────────────── */
   const handleDeleteNode = useCallback(async (nodeId) => {
-    // Optimistic update
+    // If it's a draft node, solely remove it from local draft state
+    if (String(nodeId).startsWith('planned-')) {
+        setDraftData(prev => ({
+            ...prev,
+            nodes: prev.nodes.filter(n => n.id !== nodeId),
+            edges: prev.edges.filter(e => e.source_id !== nodeId && e.target_id !== nodeId)
+        }));
+        setFocusedNodeId(null);
+        setExpandedNodeId(null);
+        return;
+    }
+
+    // Otherwise, perform optimistic update and standard backend DELETE for live nodes
     setRawData(prev => ({
       ...prev,
       nodes: prev.nodes.filter(n => n.id !== nodeId),
@@ -185,11 +160,8 @@ export default function App() {
     setFocusedNodeId(null);
     setExpandedNodeId(null);
 
-    console.log("handleDeleteNode calling for:", nodeId);
     try {
-      const res = await fetch(`/api/v1/nodes/${nodeId}`, {
-        method: 'DELETE'
-      });
+      const res = await fetch(`/api/v1/nodes/${nodeId}`, { method: 'DELETE' });
       if (!res.ok) console.error("Backend delete failed", res.status);
     } catch(e) { console.error("Could not delete node", e); }
   }, []);
@@ -250,19 +222,6 @@ export default function App() {
       style={{
         background: theme === 'dark' ? '#1c1c1e' : '#f5f5f7',
         color: theme === 'dark' ? 'rgba(255,255,255,0.85)' : '#1d1d1f'
-      }}
-      onDragOver={(e) => {
-        if (e.dataTransfer.types.includes('application/infradian-node')) {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = 'copy';
-        }
-      }}
-      onDrop={(e) => {
-        const type = e.dataTransfer.getData('application/infradian-node');
-        if (type) {
-          e.preventDefault();
-          handleDropToCanvas(type);
-        }
       }}
     >
       {/* ── Global Actions (Top Right) ───────────────────────────────── */}
@@ -412,7 +371,7 @@ export default function App() {
           )}
 
           <button
-            onClick={(e) => { e.stopPropagation(); setIsAWSModalOpen(true); }}
+            onClick={(e) => { e.stopPropagation(); setIsCloudSettingsOpen(true); }}
             className="flex items-center gap-2 px-3 h-8 rounded-md cursor-pointer border-0 text-xs font-semibold"
             style={{
               background: 'linear-gradient(to right, rgba(249, 115, 22, 0.1), rgba(245, 158, 11, 0.1))',
@@ -426,7 +385,7 @@ export default function App() {
               e.currentTarget.style.background = 'linear-gradient(to right, rgba(249, 115, 22, 0.1), rgba(245, 158, 11, 0.1))';
             }}
           >
-            <span>Connect AWS</span>
+            <span>☁ Cloud</span>
           </button>
       </div>
 
@@ -501,7 +460,10 @@ export default function App() {
 
       <div className="w-full h-full relative">
         <CytoscapeCanvas 
-          graphData={rawData}
+          graphData={{
+              nodes: [...rawData.nodes, ...draftData.nodes],
+              edges: [...rawData.edges, ...draftData.edges]
+          }}
           layoutTrigger={layoutTrigger}
           onNodeClick={(id) => handleNodeClick(id)}
           onCanvasClick={() => clearFocus()}
@@ -513,7 +475,7 @@ export default function App() {
         
           {/* DOM Overlays managed by Cytoscape WebGL physics */}
         <div className="absolute inset-0 pointer-events-none z-10" style={{ transformOrigin: '0 0' }}>
-           {rawData.nodes.map(node => {
+           {[...rawData.nodes, ...draftData.nodes].map(node => {
              const isRegion = ['aws_vpc', 'aws_subnet'].includes(node.type);
              return (
                <div 
@@ -591,8 +553,8 @@ export default function App() {
 
       {/* Command Palette */}
       <CommandPalette
-        nodes={rawData.nodes}
-        edges={rawData.edges}
+        nodes={[...rawData.nodes, ...draftData.nodes]}
+        edges={[...rawData.edges, ...draftData.edges]}
         isOpen={cmdKOpen}
         onClose={() => setCmdKOpen(false)}
         onSelect={handleGodModeSelect}
@@ -603,7 +565,7 @@ export default function App() {
       <AnimatePresence>
         {focusedNodeId && isAnalysisOpen && !focusedNodeId.startsWith('planned-') && (
             <AnalysisPanel 
-                node={rawData.nodes.find(n => String(n.id) === String(focusedNodeId))}
+                node={[...rawData.nodes, ...draftData.nodes].find(n => String(n.id) === String(focusedNodeId))}
                 theme={theme}
                 onClose={() => clearFocus()}
             />
@@ -622,10 +584,9 @@ export default function App() {
         <PlanningPanel theme={theme} />
       )}
       
-      <AWSSyncModal 
-        isOpen={isAWSModalOpen} 
-        onClose={() => setIsAWSModalOpen(false)} 
-        onSuccess={() => window.location.reload()} 
+      <CloudSettings
+        isOpen={isCloudSettingsOpen}
+        onClose={() => setIsCloudSettingsOpen(false)}
         theme={theme}
       />
     </div>
