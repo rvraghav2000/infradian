@@ -11,6 +11,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional, List
 
+import json
+import boto3
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
@@ -45,6 +47,12 @@ class AddConnectionRequest(BaseModel):
     access_key_id: str = Field(..., min_length=1)
     secret_access_key: str = Field(..., min_length=1)
 
+class BootstrapConnectionRequest(BaseModel):
+    alias: str = Field(default="Infradian Auto", description="Human-friendly name")
+    region: str = Field(default="us-east-1")
+    admin_access_key_id: str = Field(..., min_length=1)
+    admin_secret_access_key: str = Field(..., min_length=1)
+
 class ConnectionOut(BaseModel):
     id: str
     alias: str
@@ -62,6 +70,8 @@ class SyncResultOut(BaseModel):
     nodes_synced: int = 0
     edges_synced: int = 0
     error: Optional[str] = None
+    collector_errors: List[str] = Field(default_factory=list)
+    message: str = ""
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -165,6 +175,126 @@ async def add_connection(req: AddConnectionRequest):
     )
 
 
+@router.post("/bootstrap", response_model=ConnectionOut, status_code=status.HTTP_201_CREATED)
+async def bootstrap_connection(req: BootstrapConnectionRequest):
+    """
+    Automated AWS Scaffolding:
+    1. Uses admin keys to create a restricted 'infradian-scanner' user.
+    2. Attaches the InfradianDiscoveryPolicy.
+    3. Generates new restricted Access Keys.
+    4. Persists the connection to Neo4j and discards admin keys.
+    """
+    try:
+        # A. Initialize admin clients
+        session = boto3.Session(
+            aws_access_key_id=req.admin_access_key_id,
+            aws_secret_access_key=req.admin_secret_access_key,
+            region_name=req.region
+        )
+        iam = session.client("iam")
+        sts = session.client("sts")
+        
+        # B. Get Account ID
+        identity = sts.get_caller_identity()
+        account_id = identity.get("Account")
+        
+        user_name = "infradian-scanner"
+        policy_name = "InfradianDiscoveryPolicy"
+        
+        # C. Create IAM User (ignore if exists)
+        try:
+            iam.create_user(UserName=user_name)
+            logger.info(f"Created IAM user: {user_name}")
+        except iam.exceptions.EntityAlreadyExistsException:
+            logger.info(f"IAM user {user_name} already exists")
+
+        # D. Put Inline Policy
+        discovery_policy = {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Sid": "InfradianScanner",
+                    "Effect": "Allow",
+                    "Action": [
+                        "ec2:DescribeVpcs",
+                        "ec2:DescribeSubnets",
+                        "ec2:DescribeInstances",
+                        "ec2:DescribeSecurityGroups",
+                        "elasticloadbalancing:DescribeLoadBalancers",
+                        "elasticloadbalancing:DescribeTargetGroups",
+                        "elasticloadbalancing:DescribeTargetHealth",
+                        "rds:DescribeDBInstances",
+                        "lambda:ListFunctions",
+                        "s3:ListAllMyBuckets",
+                        "s3:ListBuckets",
+                        "sts:GetCallerIdentity"
+                    ],
+                    "Resource": "*"
+                }
+            ]
+        }
+        
+        iam.put_user_policy(
+            UserName=user_name,
+            PolicyName=policy_name,
+            PolicyDocument=json.dumps(discovery_policy)
+        )
+        logger.info(f"Attached {policy_name} to {user_name}")
+
+        # E. Generate Access Key
+        key_response = iam.create_access_key(UserName=user_name)
+        new_access_key = key_response["AccessKey"]["AccessKeyId"]
+        new_secret_key = key_response["AccessKey"]["SecretAccessKey"]
+        
+        # F. Persist to Neo4j
+        conn_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+
+        cypher = """
+        CREATE (c:CloudIntegration {
+            id: $id,
+            alias: $alias,
+            provider: 'aws',
+            region: $region,
+            account_id: $account_id,
+            access_key_id: $access_key_id,
+            encrypted_secret_key: $encrypted_secret_key,
+            status: 'connected',
+            last_sync_at: null,
+            created_at: $created_at
+        })
+        RETURN properties(c) AS props
+        """
+        db.query(cypher, parameters={
+            "id": conn_id,
+            "alias": req.alias,
+            "region": req.region,
+            "account_id": account_id,
+            "access_key_id": new_access_key,
+            "encrypted_secret_key": _obfuscate(new_secret_key),
+            "created_at": now,
+        })
+        
+        logger.info(f"Successfully bootstrapped restricted connection for account {account_id}")
+
+        return ConnectionOut(
+            id=conn_id,
+            alias=req.alias,
+            provider="aws",
+            region=req.region,
+            account_id=account_id,
+            access_key_id_masked=_mask_key(new_access_key),
+            status="connected",
+            last_sync_at=None,
+            created_at=now,
+        )
+
+    except Exception as e:
+        logger.exception("Bootstrap failed")
+        raise HTTPException(status_code=500, detail=f"Bootstrap failed: {str(e)}")
+
+
+
 @router.get("/connections", response_model=List[ConnectionOut])
 async def list_connections():
     """Return all stored cloud integrations (secret keys are never exposed)."""
@@ -221,6 +351,7 @@ async def sync_connection(connection_id: str):
 
         collector = AWSInventoryCollector(client)
         raw_inventory = collector.collect_all()
+        collector_errors = collector.errors  # Captured per-service errors
 
         normalizer = AWSGraphNormalizer(region=region, account_id=account_id)
         nodes, edges = normalizer.normalize(raw_inventory)
@@ -228,17 +359,34 @@ async def sync_connection(connection_id: str):
         sync_engine = AWSGraphSync()
         sync_result = sync_engine.sync(nodes, edges)
 
+        nodes_synced = sync_result.get("nodes_synced", 0)
+        edges_synced = sync_result.get("edges_synced", 0)
         now = datetime.now(timezone.utc).isoformat()
+
+        # Determine final status based on results
+        if nodes_synced == 0 and len(collector_errors) > 0:
+            # All collectors failed — likely IAM issue
+            final_status = "warning"
+            message = f"Sync completed but 0 resources found. {len(collector_errors)} service(s) returned errors — check IAM permissions."
+        elif nodes_synced == 0:
+            final_status = "warning"
+            message = "Sync completed but 0 resources found in this region. Deploy some infrastructure or check the region."
+        else:
+            final_status = "connected"
+            message = f"Successfully synced {nodes_synced} nodes and {edges_synced} edges."
+
         db.query(
-            "MATCH (c:CloudIntegration {id: $id}) SET c.status = 'connected', c.last_sync_at = $ts",
-            parameters={"id": connection_id, "ts": now},
+            "MATCH (c:CloudIntegration {id: $id}) SET c.status = $status, c.last_sync_at = $ts",
+            parameters={"id": connection_id, "status": final_status, "ts": now},
         )
 
         return SyncResultOut(
             connection_id=connection_id,
-            status="success",
-            nodes_synced=sync_result.get("nodes_synced", 0),
-            edges_synced=sync_result.get("edges_synced", 0),
+            status=final_status,
+            nodes_synced=nodes_synced,
+            edges_synced=edges_synced,
+            collector_errors=collector_errors,
+            message=message,
         )
 
     except Exception as e:
@@ -251,6 +399,7 @@ async def sync_connection(connection_id: str):
             connection_id=connection_id,
             status="error",
             error=str(e),
+            message=f"Sync failed: {str(e)}",
         )
 
 

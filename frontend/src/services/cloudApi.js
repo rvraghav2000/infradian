@@ -76,3 +76,20 @@ export async function deleteConnection(connectionId) {
   }
   return res.json();
 }
+
+/**
+ * Auto-scaffold a new AWS connection using admin keys.
+ * Returns the created ConnectionOut object.
+ */
+export async function bootstrapConnection({ alias, region, admin_access_key_id, admin_secret_access_key }) {
+  const res = await fetch(`${BASE}/bootstrap`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ alias, region, admin_access_key_id, admin_secret_access_key }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || `Bootstrap failed: ${res.status}`);
+  }
+  return res.json();
+}

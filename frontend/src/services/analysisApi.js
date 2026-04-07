@@ -5,32 +5,47 @@
 
 const BASE = '/api/v1/analysis/v2';
 
-export async function fetchBlastRadius(nodeId, { maxDepth = 10, maxCost = 1000 } = {}) {
-  const res = await fetch(`${BASE}/blast-radius/${encodeURIComponent(nodeId)}?max_depth=${maxDepth}&max_cost=${maxCost}`);
-  if (!res.ok) throw new Error(`Blast radius failed: ${res.status}`);
-  return res.json();
-}
+/**
+ * Common helper for POSTing to analysis endpoints with optional simulation context.
+ */
+async function postAnalysis(endpoint, nodeId, draftGraph = null, extra = {}) {
+  const body = {
+    nodeId,
+    simulation: draftGraph ? {
+      nodes: draftGraph.nodes || [],
+      edges: draftGraph.edges || []
+    } : null,
+    ...extra
+  };
 
-export async function fetchSafeDelete(nodeId) {
-  const res = await fetch(`${BASE}/safe-delete/${encodeURIComponent(nodeId)}`);
-  if (!res.ok) throw new Error(`Safe delete failed: ${res.status}`);
-  return res.json();
-}
-
-export async function fetchSimulateRemoval(nodeId) {
-  const res = await fetch(`${BASE}/simulate-removal`, {
+  const res = await fetch(`${BASE}${endpoint}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ nodeId }),
+    body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`Simulation failed: ${res.status}`);
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `Analysis failed: ${res.status}`);
+  }
   return res.json();
 }
 
-export async function fetchTopActions(limit = 5) {
-  const res = await fetch(`${BASE}/top-actions?limit=${limit}`);
-  if (!res.ok) throw new Error(`Top actions failed: ${res.status}`);
-  return res.json();
+export async function fetchBlastRadius(nodeId, draftGraph = null, { maxDepth = 10, maxCost = 1000 } = {}) {
+  return postAnalysis('/blast-radius', nodeId, draftGraph, { maxDepth, maxCost });
 }
+
+export async function fetchSafeDelete(nodeId, draftGraph = null) {
+  return postAnalysis('/safe-delete', nodeId, draftGraph);
+}
+
+export async function fetchSimulateRemoval(nodeId, draftGraph = null) {
+  return postAnalysis('/simulate-removal', nodeId, draftGraph);
+}
+
+export async function fetchTopActions(limit = 5, draftGraph = null) {
+  return postAnalysis('/top-actions', '', draftGraph, { maxDepth: limit }); // Reusing maxDepth as limit
+}
+
 
 

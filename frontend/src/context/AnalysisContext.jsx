@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo, useRef } from 'react';
 import {
   fetchBlastRadius,
   fetchSafeDelete,
@@ -9,10 +9,17 @@ import {
 const AnalysisContext = createContext({});
 
 export function AnalysisProvider({ children }) {
+  const dropLockRef = useRef(false);
+
   // ── Core mode state ─────────────────────────────────────────
   const [isSimulationMode, setIsSimulationMode] = useState(false);
 
+  // ── Simulation / Drafting state ──────────────────────────────
+  const [draftData, setDraftData] = useState({ nodes: [], edges: [] });
+
+
   // ── Analysis results ────────────────────────────────────────
+
   const [blastRadius, setBlastRadius] = useState(null);
   const [safeDeleteResult, setSafeDeleteResult] = useState(null);
   const [simulationResult, setSimulationResult] = useState(null);
@@ -34,13 +41,14 @@ export function AnalysisProvider({ children }) {
   // ── API Actions ─────────────────────────────────────────────
 
   const loadBlastRadius = useCallback(async (nodeId) => {
-    if (!nodeId || nodeId.startsWith('planned-')) {
+    if (!nodeId) {
       setBlastRadius(null);
       return;
     }
     setBlastLoading(true);
     try {
-      const data = await fetchBlastRadius(nodeId);
+      // Send draftData if we're in simulation mode to allow "What-if" analysis on planned nodes
+      const data = await fetchBlastRadius(nodeId, isSimulationMode ? draftData : null);
       setBlastRadius(data);
     } catch (e) {
       console.error('Blast radius fetch failed:', e);
@@ -48,13 +56,14 @@ export function AnalysisProvider({ children }) {
     } finally {
       setBlastLoading(false);
     }
-  }, []);
+  }, [isSimulationMode, draftData]);
+
 
   const loadSafeDelete = useCallback(async (nodeId) => {
     if (!nodeId) return;
     setSafeDeleteLoading(true);
     try {
-      const data = await fetchSafeDelete(nodeId);
+      const data = await fetchSafeDelete(nodeId, isSimulationMode ? draftData : null);
       setSafeDeleteResult(data);
     } catch (e) {
       console.error('Safe delete fetch failed:', e);
@@ -62,13 +71,14 @@ export function AnalysisProvider({ children }) {
     } finally {
       setSafeDeleteLoading(false);
     }
-  }, []);
+  }, [isSimulationMode, draftData]);
+
 
   const loadSimulation = useCallback(async (nodeId) => {
     if (!nodeId) return;
     setSimulationLoading(true);
     try {
-      const data = await fetchSimulateRemoval(nodeId);
+      const data = await fetchSimulateRemoval(nodeId, isSimulationMode ? draftData : null);
       setSimulationResult(data);
     } catch (e) {
       console.error('Simulation fetch failed:', e);
@@ -76,12 +86,13 @@ export function AnalysisProvider({ children }) {
     } finally {
       setSimulationLoading(false);
     }
-  }, []);
+  }, [isSimulationMode, draftData]);
+
 
   const loadTopActions = useCallback(async (limit = 5) => {
     setTopActionsLoading(true);
     try {
-      const data = await fetchTopActions(limit);
+      const data = await fetchTopActions(limit, isSimulationMode ? draftData : null);
       setTopActions(data);
     } catch (e) {
       console.error('Top actions fetch failed:', e);
@@ -89,7 +100,8 @@ export function AnalysisProvider({ children }) {
     } finally {
       setTopActionsLoading(false);
     }
-  }, []);
+  }, [isSimulationMode, draftData]);
+
 
   const clearAnalysis = useCallback(() => {
     setBlastRadius(null);
@@ -98,6 +110,48 @@ export function AnalysisProvider({ children }) {
     setActivePath(null);
     setActivePathStep(0);
   }, []);
+
+  // ── Drafting Operations ────────────────────────────────────
+
+  const handleNodeDrop = useCallback(async (primitiveData, graphX, graphY) => {
+    if (dropLockRef.current) return;
+    dropLockRef.current = true;
+    setTimeout(() => { dropLockRef.current = false; }, 100);
+
+    const newId = `planned-${primitiveData.type.replace(/_/g, '-')}-${Math.floor(Math.random() * 10000)}`;
+
+    const newNode = {
+      ...primitiveData,
+      id: newId,
+      label: `Draft ${primitiveData.label || primitiveData.type}`,
+      parentId: null,
+      parent_id: null,
+      status: 'planned', // Use 'planned' status to match backend NodeStatus enum
+      metrics: { current_load: 0.0 },
+      history: [],
+      attributes: {
+        spawnX: graphX,
+        spawnY: graphY,
+        ...primitiveData.attributes
+      },
+    };
+
+    setDraftData(prev => ({
+      ...prev,
+      nodes: [...prev.nodes, newNode]
+    }));
+    return newNode;
+  }, []);
+
+
+  const handleDeleteDraftNode = useCallback((nodeId) => {
+    setDraftData(prev => ({
+      ...prev,
+      nodes: prev.nodes.filter(n => n.id !== nodeId),
+      edges: prev.edges.filter(e => e.source !== nodeId && e.target !== nodeId)
+    }));
+  }, []);
+
 
   const selectPath = useCallback((path) => {
     setActivePath(path);
@@ -117,6 +171,9 @@ export function AnalysisProvider({ children }) {
   const value = useMemo(() => ({
     // Mode
     isSimulationMode, setIsSimulationMode,
+    // Simulation / Drafting
+    draftData, setDraftData, 
+    handleNodeDrop, handleDeleteDraftNode,
     // Results
     blastRadius, safeDeleteResult, simulationResult, topActions,
     // Loading
@@ -128,12 +185,14 @@ export function AnalysisProvider({ children }) {
     // Actions
     loadBlastRadius, loadSafeDelete, loadSimulation, loadTopActions, clearAnalysis,
   }), [
-    isSimulationMode, blastRadius, safeDeleteResult, simulationResult, topActions,
+    isSimulationMode, draftData, blastRadius, safeDeleteResult, simulationResult, topActions,
     blastLoading, safeDeleteLoading, simulationLoading, topActionsLoading,
     activePath, activePathStep, overlayMode,
     loadBlastRadius, loadSafeDelete, loadSimulation, loadTopActions, clearAnalysis,
-    selectPath, stepPath,
+    handleNodeDrop, handleDeleteDraftNode, selectPath, stepPath,
   ]);
+
+
 
   return (
     <AnalysisContext.Provider value={value}>

@@ -6,6 +6,7 @@ import {
   listConnections,
   syncConnection,
   deleteConnection,
+  bootstrapConnection,
 } from '../services/cloudApi';
 
 // ── AWS Region Options ──────────────────────────────────────────────
@@ -34,6 +35,7 @@ function StatusBadge({ status, isDark }) {
   const map = {
     connected: { bg: 'rgba(52,199,89,0.15)', color: '#34C759', label: 'Connected' },
     syncing:   { bg: 'rgba(0,122,255,0.15)',  color: '#007AFF', label: 'Syncing…' },
+    warning:   { bg: 'rgba(255,149,0,0.15)',  color: '#FF9500', label: 'Warning' },
     error:     { bg: 'rgba(255,59,48,0.15)',   color: '#FF3B30', label: 'Error' },
     unknown:   { bg: 'rgba(174,174,178,0.15)', color: '#aeaeb2', label: 'Unknown' },
   };
@@ -69,10 +71,19 @@ export default function CloudSettings({ isOpen, onClose, theme = 'light' }) {
   const [showAddForm, setShowAddForm] = useState(false);
 
   // Add form state
+  const [setupMode, setSetupMode] = useState('auto'); // 'auto' | 'manual'
   const [alias, setAlias] = useState('');
   const [region, setRegion] = useState('us-east-1');
+  
+  // Manual mode states
   const [accessKey, setAccessKey] = useState('');
   const [secretKey, setSecretKey] = useState('');
+  
+  // Auto mode states
+  const [adminAccessKey, setAdminAccessKey] = useState('');
+  const [adminSecretKey, setAdminSecretKey] = useState('');
+  const [bootstrapping, setBootstrapping] = useState(false);
+
   const [testResult, setTestResult] = useState(null);   // { valid, account_id, error }
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -81,6 +92,7 @@ export default function CloudSettings({ isOpen, onClose, theme = 'light' }) {
   // Sync/delete in-flight
   const [syncingIds, setSyncingIds] = useState(new Set());
   const [deletingIds, setDeletingIds] = useState(new Set());
+  const [syncResults, setSyncResults] = useState({});
 
   // ── Fetch connections ──────────────────────────────────────────
   const fetchConnections = useCallback(async () => {
@@ -116,16 +128,15 @@ export default function CloudSettings({ isOpen, onClose, theme = 'light' }) {
     }
   };
 
-  // ── Save Connection ────────────────────────────────────────────
+  // ── Save Connection (Manual) ───────────────────────────────────
   const handleSave = async () => {
     setSaving(true);
     setFormError('');
     try {
-      await addConnection({ alias, region, access_key_id: accessKey, secret_access_key: secretKey });
-      // Reset form
-      setAlias(''); setRegion('us-east-1'); setAccessKey(''); setSecretKey('');
-      setTestResult(null); setShowAddForm(false);
+      const conn = await addConnection({ alias, region, access_key_id: accessKey, secret_access_key: secretKey });
+      resetForm();
       await fetchConnections();
+      handleSync(conn.id);
     } catch (e) {
       setFormError(e.message);
     } finally {
@@ -133,14 +144,46 @@ export default function CloudSettings({ isOpen, onClose, theme = 'light' }) {
     }
   };
 
+  // ── Bootstrap Connection (Auto) ────────────────────────────────
+  const handleBootstrap = async () => {
+    setBootstrapping(true);
+    setFormError('');
+    try {
+      const conn = await bootstrapConnection({
+        alias,
+        region,
+        admin_access_key_id: adminAccessKey,
+        admin_secret_access_key: adminSecretKey
+      });
+      resetForm();
+      await fetchConnections();
+      handleSync(conn.id);
+    } catch (e) {
+      setFormError(e.message);
+    } finally {
+      setBootstrapping(false);
+    }
+  };
+
+  const resetForm = () => {
+    setAlias(''); setRegion('us-east-1'); 
+    setAccessKey(''); setSecretKey('');
+    setAdminAccessKey(''); setAdminSecretKey('');
+    setTestResult(null); setShowAddForm(false);
+    setFormError('');
+  };
+
   // ── Sync ───────────────────────────────────────────────────────
   const handleSync = async (id) => {
     setSyncingIds(prev => new Set(prev).add(id));
+    setSyncResults(prev => { const next = {...prev}; delete next[id]; return next; });
     try {
-      await syncConnection(id);
+      const result = await syncConnection(id);
+      setSyncResults(prev => ({...prev, [id]: result}));
       await fetchConnections();
     } catch (e) {
       console.error('Sync error:', e);
+      setSyncResults(prev => ({...prev, [id]: { status: 'error', message: e.message }}));
       await fetchConnections();
     } finally {
       setSyncingIds(prev => { const next = new Set(prev); next.delete(id); return next; });
@@ -316,16 +359,49 @@ export default function CloudSettings({ isOpen, onClose, theme = 'light' }) {
                     }}>
                       <span style={{ fontSize: 13, fontWeight: 600, color: textPrim }}>New Connection</span>
                       <button
-                        onClick={() => { setShowAddForm(false); setTestResult(null); setFormError(''); }}
+                        onClick={resetForm}
                         style={{ background: 'none', border: 'none', color: textSec, cursor: 'pointer', fontSize: 10 }}
                       >Cancel</button>
+                    </div>
+
+                    {/* Mode Toggle */}
+                    <div style={{ 
+                      display: 'flex', background: inputBg, borderRadius: 10, 
+                      padding: 2, marginBottom: 16, border: `1px solid ${inputBdr}`
+                    }}>
+                      <button
+                        onClick={() => { setSetupMode('auto'); setTestResult(null); }}
+                        style={{
+                          flex: 1, padding: '6px 0', borderRadius: 8, fontSize: 10, fontWeight: 600,
+                          border: 'none', cursor: 'pointer',
+                          background: setupMode === 'auto' ? (isDark ? 'rgba(255,255,255,0.1)' : '#fff') : 'transparent',
+                          color: setupMode === 'auto' ? '#f97316' : textSec,
+                          boxShadow: setupMode === 'auto' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none',
+                          transition: 'all 0.2s',
+                        }}
+                      >
+                        Auto-Scaffold
+                      </button>
+                      <button
+                        onClick={() => { setSetupMode('manual'); setTestResult(null); }}
+                        style={{
+                          flex: 1, padding: '6px 0', borderRadius: 8, fontSize: 10, fontWeight: 600,
+                          border: 'none', cursor: 'pointer',
+                          background: setupMode === 'manual' ? (isDark ? 'rgba(255,255,255,0.1)' : '#fff') : 'transparent',
+                          color: setupMode === 'manual' ? '#f97316' : textSec,
+                          boxShadow: setupMode === 'manual' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none',
+                          transition: 'all 0.2s',
+                        }}
+                      >
+                        Manual Setup
+                      </button>
                     </div>
 
                     {/* Alias */}
                     <label style={labelStyle(textSec)}>Connection Alias</label>
                     <input
                       type="text" value={alias} onChange={e => setAlias(e.target.value)}
-                      placeholder="e.g. Production US-East"
+                      placeholder="e.g. My Production VPC"
                       style={inputStyle(inputBg, inputBdr, textPrim)}
                     />
 
@@ -338,79 +414,105 @@ export default function CloudSettings({ isOpen, onClose, theme = 'light' }) {
                       {AWS_REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
                     </select>
 
-                    {/* Access Key */}
-                    <label style={labelStyle(textSec)}>Access Key ID</label>
-                    <input
-                      type="text" value={accessKey} onChange={e => setAccessKey(e.target.value)}
-                      placeholder="AKIAIOSFODNN7EXAMPLE"
-                      style={{ ...inputStyle(inputBg, inputBdr, textPrim), fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
-                    />
+                    {setupMode === 'auto' ? (
+                      <>
+                        <div style={{ marginTop: 12, padding: 10, borderRadius: 10, background: 'rgba(249,115,22,0.05)', border: '1px solid rgba(249,115,22,0.1)', marginBottom: 12 }}>
+                          <p style={{ margin: 0, fontSize: 10, color: textSec, lineHeight: 1.4 }}>
+                            Provide admin keys to automatically create a restricted <strong>infradian-scanner</strong> user with <strong>ReadOnlyAccess</strong>.
+                          </p>
+                        </div>
+                        <label style={labelStyle(textSec)}>Admin Access Key</label>
+                        <input
+                          type="text" value={adminAccessKey} onChange={e => setAdminAccessKey(e.target.value)}
+                          placeholder="AKIA..."
+                          style={{ ...inputStyle(inputBg, inputBdr, textPrim), fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
+                        />
+                        <label style={labelStyle(textSec)}>Admin Secret Key</label>
+                        <input
+                          type="password" value={adminSecretKey} onChange={e => setAdminSecretKey(e.target.value)}
+                          placeholder="Secret..."
+                          style={{ ...inputStyle(inputBg, inputBdr, textPrim), fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
+                        />
+                        
+                        {formError && (
+                          <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 10, fontSize: 11, background: 'rgba(255,59,48,0.12)', color: '#FF3B30', border: '1px solid rgba(255,59,48,0.2)' }}>
+                            {formError}
+                          </div>
+                        )}
 
-                    {/* Secret Key */}
-                    <label style={labelStyle(textSec)}>Secret Access Key</label>
-                    <input
-                      type="password" value={secretKey} onChange={e => setSecretKey(e.target.value)}
-                      placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-                      style={{ ...inputStyle(inputBg, inputBdr, textPrim), fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
-                    />
+                        <button
+                          onClick={handleBootstrap}
+                          disabled={bootstrapping || !adminAccessKey || !adminSecretKey || !alias}
+                          style={{
+                            width: '100%', marginTop: 14, padding: '10px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                            fontSize: 12, fontWeight: 600, color: '#fff',
+                            background: (!adminAccessKey || !adminSecretKey || !alias) ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)') : 'linear-gradient(135deg, #f97316, #f59e0b)',
+                            opacity: (!adminAccessKey || !adminSecretKey || !alias) ? 0.5 : 1,
+                            transition: 'all 0.2s',
+                          }}
+                        >
+                          {bootstrapping ? '⟳ Provisioning...' : '🚀 Auto-Provision Scanner'}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <label style={labelStyle(textSec)}>Access Key ID</label>
+                        <input
+                          type="text" value={accessKey} onChange={e => setAccessKey(e.target.value)}
+                          placeholder="AKIA..."
+                          style={{ ...inputStyle(inputBg, inputBdr, textPrim), fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
+                        />
+                        <label style={labelStyle(textSec)}>Secret Access Key</label>
+                        <input
+                          type="password" value={secretKey} onChange={e => setSecretKey(e.target.value)}
+                          placeholder="Secret..."
+                          style={{ ...inputStyle(inputBg, inputBdr, textPrim), fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
+                        />
 
-                    {/* Test result */}
-                    {testResult && (
-                      <div style={{
-                        marginTop: 10, padding: '8px 12px', borderRadius: 10,
-                        fontSize: 11, fontWeight: 500,
-                        background: testResult.valid ? 'rgba(52,199,89,0.12)' : 'rgba(255,59,48,0.12)',
-                        color: testResult.valid ? '#34C759' : '#FF3B30',
-                        border: `1px solid ${testResult.valid ? 'rgba(52,199,89,0.2)' : 'rgba(255,59,48,0.2)'}`,
-                      }}>
-                        {testResult.valid
-                          ? `✓ Verified — Account ${testResult.account_id}`
-                          : `✗ ${testResult.error || 'Invalid credentials'}`}
-                      </div>
+                        {testResult && (
+                          <div style={{
+                            marginTop: 10, padding: '8px 12px', borderRadius: 10,
+                            fontSize: 11, fontWeight: 500,
+                            background: testResult.valid ? 'rgba(52,199,89,0.12)' : 'rgba(255,59,48,0.12)',
+                            color: testResult.valid ? '#34C759' : '#FF3B30',
+                            border: `1px solid ${testResult.valid ? 'rgba(52,199,89,0.2)' : 'rgba(255,59,48,0.2)'}`,
+                          }}>
+                            {testResult.valid ? `✓ Verified — Account ${testResult.account_id}` : `✗ ${testResult.error || 'Invalid credentials'}`}
+                          </div>
+                        )}
+
+                        {formError && (
+                          <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 10, fontSize: 11, background: 'rgba(255,59,48,0.12)', color: '#FF3B30', border: '1px solid rgba(255,59,48,0.2)' }}>
+                            {formError}
+                          </div>
+                        )}
+
+                        <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+                          <button
+                            onClick={handleTest}
+                            disabled={testing || !accessKey || !secretKey}
+                            style={{ ...actionBtnStyle(isDark), flex: 1, opacity: (!accessKey || !secretKey) ? 0.4 : 1 }}
+                          >
+                            {testing ? '⟳ Testing…' : '⚡ Test'}
+                          </button>
+                          <button
+                            onClick={handleSave}
+                            disabled={saving || !testResult?.valid || !alias}
+                            style={{
+                              flex: 1, padding: '8px 14px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                              fontSize: 11, fontWeight: 600, color: '#fff',
+                              background: (!testResult?.valid || !alias) ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)') : 'linear-gradient(135deg, #f97316, #f59e0b)',
+                              opacity: (!testResult?.valid || !alias) ? 0.5 : 1,
+                              transition: 'all 0.2s',
+                            }}
+                          >
+                            {saving ? 'Saving…' : 'Save Connection'}
+                          </button>
+                        </div>
+                      </>
                     )}
-
-                    {formError && (
-                      <div style={{
-                        marginTop: 10, padding: '8px 12px', borderRadius: 10,
-                        fontSize: 11, background: 'rgba(255,59,48,0.12)',
-                        color: '#FF3B30', border: '1px solid rgba(255,59,48,0.2)',
-                      }}>
-                        {formError}
-                      </div>
-                    )}
-
-                    {/* Actions */}
-                    <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-                      <button
-                        onClick={handleTest}
-                        disabled={testing || !accessKey || !secretKey}
-                        style={{
-                          ...actionBtnStyle(isDark),
-                          flex: 1,
-                          opacity: (!accessKey || !secretKey) ? 0.4 : 1,
-                        }}
-                      >
-                        {testing ? '⟳ Testing…' : '⚡ Test Connection'}
-                      </button>
-                      <button
-                        onClick={handleSave}
-                        disabled={saving || !testResult?.valid || !alias}
-                        style={{
-                          flex: 1, padding: '8px 14px', borderRadius: 10,
-                          border: 'none', cursor: 'pointer',
-                          fontSize: 11, fontWeight: 600,
-                          color: '#fff',
-                          background: (!testResult?.valid || !alias)
-                            ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)')
-                            : 'linear-gradient(135deg, #f97316, #f59e0b)',
-                          opacity: (!testResult?.valid || !alias) ? 0.5 : 1,
-                          transition: 'all 0.2s',
-                        }}
-                      >
-                        {saving ? 'Saving…' : 'Save & Connect'}
-                      </button>
-                    </div>
                   </div>
+
                 </motion.div>
               )}
             </AnimatePresence>
@@ -451,6 +553,7 @@ export default function CloudSettings({ isOpen, onClose, theme = 'light' }) {
                     textDim={textDim}
                     isSyncing={syncingIds.has(conn.id)}
                     isDeleting={deletingIds.has(conn.id)}
+                    syncResult={syncResults[conn.id]}
                     onSync={() => handleSync(conn.id)}
                     onDelete={() => handleDelete(conn.id)}
                   />
@@ -472,7 +575,7 @@ export default function CloudSettings({ isOpen, onClose, theme = 'light' }) {
 
 function ConnectionCard({
   conn, isDark, cardBg, cardBorder, textPrim, textSec, textDim,
-  isSyncing, isDeleting, onSync, onDelete,
+  isSyncing, isDeleting, syncResult, onSync, onDelete,
 }) {
   const [hovered, setHovered] = useState(false);
 
@@ -556,6 +659,29 @@ function ConnectionCard({
           </button>
         </div>
       </div>
+
+      {syncResult && (
+        <div style={{
+          marginTop: 12, padding: '10px 12px', borderRadius: 8,
+          fontSize: 10, background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.03)',
+          border: `1px solid ${cardBorder}`
+        }}>
+          <div style={{ 
+            color: syncResult.status === 'warning' ? '#FF9500' : 
+                   syncResult.status === 'error' ? '#FF3B30' : '#34C759',
+            fontWeight: 600, marginBottom: 4 
+          }}>
+            {syncResult.message}
+          </div>
+          {syncResult.collector_errors && syncResult.collector_errors.length > 0 && (
+            <ul style={{ margin: 0, paddingLeft: 16, color: '#FF3B30', marginTop: 6, listStyleType: 'disc' }}>
+              {syncResult.collector_errors.map((err, i) => (
+                <li key={i} style={{ marginBottom: 2 }}>{err}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   );
 }

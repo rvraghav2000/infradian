@@ -1,10 +1,26 @@
 import logging
 import json
 from typing import List, Dict, Any
+from datetime import datetime
 from app.models import Node, Edge
 from app.database import db
 
 logger = logging.getLogger(__name__)
+
+def _make_neo4j_safe(value):
+    """Ensure a value is safe for Neo4j property storage."""
+    if value is None:
+        return None
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, (list, dict)):
+        try:
+            return json.dumps(value, default=str)
+        except (TypeError, ValueError):
+            return str(value)
+    return str(value)
 
 class AWSGraphSync:
     """Synchronizes normalized AWS Nodes and Edges directly into Neo4j."""
@@ -35,18 +51,15 @@ class AWSGraphSync:
             r.provider = 'aws'
         """
         
-        # Prepare Node payload stripping complex python objects down to robust primitives if needed
-        # but pydantic model dump is ideal
         nodes_payload = []
         for n in nodes:
             dump = n.model_dump()
-            # Simple sanitization for neo4j properties limits what can be set deeply
             nodes_payload.append({
                 "id": dump["id"],
                 "type": dump["type"],
                 "label": dump["label"],
                 "status": dump.get("status", "live"),
-                "parent_id": dump.get("parentId"),
+                "parent_id": dump.get("parentId") or dump.get("parent_id"),
                 "environment": dump.get("environment", "production"),
                 "business_function": dump.get("business_function", "general"),
                 "account_id": dump.get("account_id")
@@ -56,6 +69,7 @@ class AWSGraphSync:
             try:
                 self.db.query(node_query, parameters={"nodes": nodes_payload})
                 nodes_synced = len(nodes_payload)
+                logger.info(f"Successfully synced {nodes_synced} nodes to Neo4j")
             except Exception as e:
                 logger.error(f"Failed to sync nodes: {e}")
 
@@ -86,6 +100,7 @@ class AWSGraphSync:
             try:
                 self.db.query(edge_query, parameters={"edges": edges_payload})
                 edges_synced = len(edges_payload)
+                logger.info(f"Successfully synced {edges_synced} edges to Neo4j")
             except Exception as e:
                 logger.error(f"Failed to sync edges: {e}")
 

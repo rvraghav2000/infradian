@@ -21,8 +21,8 @@ import CloudSettings from './components/CloudSettings';
 
 export default function App() {
   const [rawData, setRawData] = useState({ nodes: [], edges: [] });
-  const [draftData, setDraftData] = useState({ nodes: [], edges: [] });
   const [isLoading, setIsLoading] = useState(true);
+
   const [error, setError] = useState(null);
   
   const [layoutTrigger, setLayoutTrigger] = useState(0);
@@ -34,7 +34,12 @@ export default function App() {
   const [hoveredEdgeId, setHoveredEdgeId] = useState(null);
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
   const [theme, setTheme] = useState('light');
-  const { isSimulationMode, setIsSimulationMode, blastRadius, clearAnalysis } = useAnalysis();
+  const { 
+    isSimulationMode, setIsSimulationMode, 
+    blastRadius, clearAnalysis,
+    draftData, handleNodeDrop, handleDeleteDraftNode
+  } = useAnalysis();
+
   const [isAnalysisOpen, setIsAnalysisOpen] = useState(false);
   const [isCloudSettingsOpen, setIsCloudSettingsOpen] = useState(false);
   const [accounts, setAccounts] = useState([]);
@@ -113,42 +118,17 @@ export default function App() {
 
   /* ── Backend v2 analysis is now loaded by AnalysisPanel via context ── */
 
-  /* ── Node Drop from PlanningPanel (graph-space coords) ───────── */
-  const handleNodeDrop = useCallback(async (primitiveData, graphX, graphY) => {
-    const newId = `planned-${primitiveData.type.replace(/_/g, '-')}-${Math.floor(Math.random() * 10000)}`;
-    const newNode = {
-      ...primitiveData,
-      id: newId,
-      label: `Draft ${primitiveData.label || primitiveData.type}`,
-      parentId: null, 
-      parent_id: null,
-      status: 'pending', // Mark as pending
-      attributes: {
-        spawnX: graphX,
-        spawnY: graphY,
-      },
-    };
-
-    // Keep draft completely isolated in local state
-    setDraftData(prev => ({
-      ...prev,
-      nodes: [...prev.nodes, newNode]
-    }));
-  }, []);
 
   /* ── Delete Node ──────────────────────────────────────────────── */
   const handleDeleteNode = useCallback(async (nodeId) => {
     // If it's a draft node, solely remove it from local draft state
     if (String(nodeId).startsWith('planned-')) {
-        setDraftData(prev => ({
-            ...prev,
-            nodes: prev.nodes.filter(n => n.id !== nodeId),
-            edges: prev.edges.filter(e => e.source_id !== nodeId && e.target_id !== nodeId)
-        }));
+        handleDeleteDraftNode(nodeId);
         setFocusedNodeId(null);
         setExpandedNodeId(null);
         return;
     }
+
 
     // Otherwise, perform optimistic update and standard backend DELETE for live nodes
     setRawData(prev => ({
@@ -563,11 +543,12 @@ export default function App() {
 
       {/* Analysis Panel */}
       <AnimatePresence>
-        {focusedNodeId && isAnalysisOpen && !focusedNodeId.startsWith('planned-') && (
+        {focusedNodeId && isAnalysisOpen && (
             <AnalysisPanel 
                 node={[...rawData.nodes, ...draftData.nodes].find(n => String(n.id) === String(focusedNodeId))}
                 theme={theme}
                 onClose={() => clearFocus()}
+                onDeleteNode={handleDeleteNode}
             />
         )}
       </AnimatePresence>

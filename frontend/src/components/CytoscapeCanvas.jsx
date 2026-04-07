@@ -178,10 +178,64 @@ const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onCanvasClick,
     });
   }, [blastRadius, activePath, activePathStep, theme, graphData]);
 
-  if (cyElements.length === 0) return <div style={{ padding: '20px' }}>Loading Infrastructure Map...</div>;
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    const raw = e.dataTransfer.getData('application/infradian-node-data');
+    if (!raw) return;
+    let payload;
+    try { payload = JSON.parse(raw); } catch { return; }
+
+    if (cyRef.current) {
+      const cy = cyRef.current;
+      const pan = cy.pan();
+      const zoom = cy.zoom();
+      const rect = e.currentTarget.getBoundingClientRect();
+      const graphX = (e.clientX - rect.left - pan.x) / zoom;
+      const graphY = (e.clientY - rect.top - pan.y) / zoom;
+
+      if (onNodeDrop) onNodeDrop(payload, graphX, graphY);
+    }
+  };
+
+  const isEmpty = cyElements.length === 0;
 
   return (
-    <div style={{ width: '100%', height: '100vh', position: 'relative' }}>
+    <div 
+      style={{ 
+        width: '100%', 
+        height: '100vh', 
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'transparent',
+      }}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      {isEmpty && (
+        <div style={{ 
+          textAlign: 'center', 
+          color: theme === 'dark' ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
+          zIndex: 1,
+          pointerEvents: 'none',
+          userSelect: 'none',
+        }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>🏗️</div>
+          <div style={{ fontSize: 13, fontWeight: 500, letterSpacing: '0.02em' }}>
+            Canvas is empty
+          </div>
+          <p style={{ fontSize: 11, marginTop: 6, opacity: 0.8 }}>
+            Drag components from the sidebar to start drafting
+          </p>
+        </div>
+      )}
+
 
       {/* Zoom indicator restored from IsometricCanvas */}
       <div className="absolute top-7 right-8 z-[999] select-none">
@@ -303,34 +357,6 @@ const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onCanvasClick,
               }, { passive: false, capture: true }); // Capture phase guarantees we intercept before WebGL or React
             }
 
-            // ── Native Drag-and-Drop from PlanningPanel ───────────────
-            // Converts browser viewport (clientX/Y) → Cytoscape graph-space coordinates.
-            // Formula: graphCoord = (viewportCoord - pan) / zoom
-            if (!cy.scratch('_dropBound')) {
-              cy.scratch('_dropBound', true);
-              const container = cy.container();
-
-              container.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'copy';
-              }, false);
-
-              container.addEventListener('drop', (e) => {
-                e.preventDefault();
-                const raw = e.dataTransfer.getData('application/infradian-node-data');
-                if (!raw) return;
-                let payload;
-                try { payload = JSON.parse(raw); } catch { return; }
-
-                const pan     = cy.pan();
-                const zoom    = cy.zoom();
-                const rect    = container.getBoundingClientRect();
-                const graphX  = (e.clientX - rect.left  - pan.x) / zoom;
-                const graphY  = (e.clientY - rect.top   - pan.y) / zoom;
-
-                if (onNodeDrop) onNodeDrop(payload, graphX, graphY);
-              }, false);
-            }
 
 
             // CARD_W / CARD_H are the fixed pixel dimensions of the React cards.

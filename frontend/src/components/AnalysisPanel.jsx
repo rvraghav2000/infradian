@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import GlassPanel, { GlassBadge } from './GlassPanel';
 import { useAnalysis } from '../context/AnalysisContext';
 
-export default function AnalysisPanel({ node, theme = 'light', onClose }) {
+export default function AnalysisPanel({ node, theme = 'light', onClose, onDeleteNode }) {
   const [activeTab, setActiveTab] = useState('impact');
   const isDark = theme === 'dark';
 
@@ -16,6 +16,8 @@ export default function AnalysisPanel({ node, theme = 'light', onClose }) {
     selectPath, stepPath,
   } = useAnalysis();
 
+  const isDraft = String(node?.id || '').startsWith('planned-');
+
   // Fetch blast radius + safe delete when node changes
   useEffect(() => {
     if (node?.id) {
@@ -23,6 +25,7 @@ export default function AnalysisPanel({ node, theme = 'light', onClose }) {
       loadSafeDelete(node.id);
     }
   }, [node?.id, loadBlastRadius, loadSafeDelete]);
+
 
   if (!node) return null;
 
@@ -32,6 +35,11 @@ export default function AnalysisPanel({ node, theme = 'light', onClose }) {
     { id: 'decision', label: 'Decision', icon: '🛡️' },
     { id: 'simulation', label: 'Simulate', icon: '🧪' },
   ];
+
+  if (isDraft) {
+    TABS.unshift({ id: 'config', label: 'Config', icon: '⚙️' });
+  }
+
 
   const textPrimary = isDark ? '#fff' : '#1d1d1f';
   const textSecondary = '#86868b';
@@ -47,10 +55,17 @@ export default function AnalysisPanel({ node, theme = 'light', onClose }) {
         {/* Header */}
         <div className="p-5 border-b border-white/10 flex items-center justify-between">
           <div className="flex flex-col">
-            <h2 className="text-sm font-bold truncate pr-4" style={{ color: textPrimary }}>
-              {node.label}
-            </h2>
-            <span className="text-[10px] uppercase font-semibold" style={{ color: textSecondary }}>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-bold truncate" style={{ color: textPrimary }}>
+                {node.label}
+              </h2>
+              {isDraft && (
+                <span className="px-1.5 py-0.5 rounded text-[8px] font-bold tracking-widest text-[#FF9500] bg-[#FF9500]/10 uppercase">
+                  Draft
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] uppercase font-semibold mt-1" style={{ color: textSecondary }}>
               {node.type?.replace('aws_', '').replace(/_/g, ' ')}
             </span>
           </div>
@@ -69,7 +84,7 @@ export default function AnalysisPanel({ node, theme = 'light', onClose }) {
               key={t.id}
               onClick={() => setActiveTab(t.id)}
               className={`flex-1 py-2 text-[10px] font-bold rounded-lg transition-all flex items-center justify-center gap-1 ${
-                activeTab === t.id
+                (activeTab === t.id || (isDraft && t.id === 'config'))
                   ? 'bg-white shadow-sm text-[#007AFF]'
                   : 'text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#fff]'
               }`}
@@ -84,33 +99,42 @@ export default function AnalysisPanel({ node, theme = 'light', onClose }) {
         <div className="flex-1 overflow-y-auto p-5 pb-8 custom-scrollbar" style={{ overscrollBehavior: 'contain' }}>
           <AnimatePresence mode="wait">
             <motion.div
-              key={activeTab}
+              key={isDraft ? 'config' : activeTab}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
             >
-              {activeTab === 'impact' && <ImpactTab data={blastRadius} loading={blastLoading} isDark={isDark} />}
-              {activeTab === 'paths' && (
-                <PathsTab
-                  data={blastRadius}
-                  loading={blastLoading}
-                  activePath={activePath}
-                  activePathStep={activePathStep}
-                  onSelectPath={selectPath}
-                  onStepPath={stepPath}
-                  isDark={isDark}
-                />
-              )}
-              {activeTab === 'decision' && <DecisionTab data={safeDeleteResult} loading={safeDeleteLoading} isDark={isDark} />}
-              {activeTab === 'simulation' && (
-                <SimulationTab
-                  nodeId={node.id}
-                  data={simulationResult}
-                  loading={simulationLoading}
-                  onRun={() => loadSimulation(node.id)}
-                  isDark={isDark}
-                />
+              {isDraft ? (
+                <div className="flex flex-col items-center justify-center pt-10 opacity-60">
+                    <span className="text-4xl mb-3">⚙️</span>
+                    <p className="text-xs text-center">Draft node configuration will be available soon.</p>
+                </div>
+              ) : (
+                <>
+                  {activeTab === 'impact' && <ImpactTab data={blastRadius} loading={blastLoading} isDark={isDark} />}
+                  {activeTab === 'paths' && (
+                    <PathsTab
+                      data={blastRadius}
+                      loading={blastLoading}
+                      activePath={activePath}
+                      activePathStep={activePathStep}
+                      onSelectPath={selectPath}
+                      onStepPath={stepPath}
+                      isDark={isDark}
+                    />
+                  )}
+                  {activeTab === 'decision' && <DecisionTab data={safeDeleteResult} loading={safeDeleteLoading} isDark={isDark} />}
+                  {activeTab === 'simulation' && (
+                    <SimulationTab
+                      nodeId={node.id}
+                      data={simulationResult}
+                      loading={simulationLoading}
+                      onRun={() => loadSimulation(node.id)}
+                      isDark={isDark}
+                    />
+                  )}
+                </>
               )}
             </motion.div>
           </AnimatePresence>
@@ -118,20 +142,31 @@ export default function AnalysisPanel({ node, theme = 'light', onClose }) {
 
         {/* Footer Actions */}
         <div className="p-4 bg-white/5 border-t border-white/5 flex flex-col gap-2">
-          <button
-            onClick={() => { loadSimulation(node.id); setActiveTab('simulation'); }}
-            disabled={simulationLoading}
-            className="w-full py-2.5 bg-[#007AFF] text-white rounded-xl text-xs font-bold shadow-lg shadow-blue-500/20 active:scale-[0.98] transition-transform disabled:opacity-50"
-          >
-            {simulationLoading ? 'Simulating…' : 'Simulate Removal'}
-          </button>
-          <button
-            onClick={() => { loadSafeDelete(node.id); setActiveTab('decision'); }}
-            disabled={safeDeleteLoading}
-            className="w-full py-2.5 bg-white/5 text-[#86868b] border border-white/10 rounded-xl text-xs font-bold hover:bg-white/10 active:scale-[0.98] transition-all disabled:opacity-50"
-          >
-            {safeDeleteLoading ? 'Checking…' : 'Safe to Delete?'}
-          </button>
+          {isDraft ? (
+            <button
+              onClick={() => onDeleteNode && onDeleteNode(node.id)}
+              className="w-full py-2.5 bg-red-500/10 text-[#FF3B30] border border-red-500/20 rounded-xl text-xs font-bold hover:bg-red-500/20 active:scale-[0.98] transition-all"
+            >
+              Discard Planned Node
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={() => { loadSimulation(node.id); setActiveTab('simulation'); }}
+                disabled={simulationLoading}
+                className="w-full py-2.5 bg-[#007AFF] text-white rounded-xl text-xs font-bold shadow-lg shadow-blue-500/20 active:scale-[0.98] transition-transform disabled:opacity-50"
+              >
+                {simulationLoading ? 'Simulating…' : 'Simulate Removal'}
+              </button>
+              <button
+                onClick={() => { loadSafeDelete(node.id); setActiveTab('decision'); }}
+                disabled={safeDeleteLoading}
+                className="w-full py-2.5 bg-white/5 text-[#86868b] border border-white/10 rounded-xl text-xs font-bold hover:bg-white/10 active:scale-[0.98] transition-all disabled:opacity-50"
+              >
+                {safeDeleteLoading ? 'Checking…' : 'Safe to Delete?'}
+              </button>
+            </>
+          )}
         </div>
       </GlassPanel>
     </motion.div>

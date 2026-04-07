@@ -206,12 +206,7 @@ async def get_nodes(account_id: Optional[str] = None) -> Dict[str, Any]:
     except Exception as e:
         print(f"!!! CRITICAL ERROR IN get_nodes: {str(e)}")
         traceback.print_exc()
-        try:
-            raw = SAMPLE_PATH.read_text(encoding="utf-8")
-            return json.loads(raw)
-        except Exception as fallback_e:
-            print(f"Fallback failed: {fallback_e}")
-            return {"nodes": [], "edges": [], "error": str(e)}
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve graph data: {str(e)}")
 
 
 @app.post("/api/v1/graph", status_code=status.HTTP_201_CREATED)
