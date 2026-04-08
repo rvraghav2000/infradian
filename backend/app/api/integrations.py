@@ -21,6 +21,7 @@ from app.integrations.aws.client import AWSClient
 from app.integrations.aws.inventory import AWSInventoryCollector
 from app.integrations.aws.normalize import AWSGraphNormalizer
 from app.integrations.aws.graph_sync import AWSGraphSync
+from app.integrations.aws.verifier import AWSVerifier
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/cloud", tags=["cloud-connections"])
@@ -74,6 +75,26 @@ class SyncResultOut(BaseModel):
     message: str = ""
 
 
+class AWSVerifyRequest(BaseModel):
+    connection_id: Optional[str] = Field(default=None, description="Verify stored connection")
+    region: str = Field(default="us-east-1")
+    access_key_id: Optional[str] = Field(default=None)
+    secret_access_key: Optional[str] = Field(default=None)
+
+class AWSCheckResult(BaseModel):
+    service: str
+    status: str  # PASS | FAIL
+    message: str
+    missing_permissions: List[str] = Field(default_factory=list)
+    suggested_policy_snippet: Optional[dict] = None
+
+class AWSVerificationReport(BaseModel):
+    connection_id: Optional[str] = None
+    account_id: Optional[str] = None
+    overall_status: str  # healthy | partial | disconnected
+    checks: List[AWSCheckResult]
+
+
 # ── Helpers ──────────────────────────────────────────────────────────
 
 def _obfuscate(plain: str) -> str:
@@ -111,6 +132,70 @@ async def test_connection(req: TestConnectionRequest):
     except Exception as e:
         logger.warning(f"Connection test failed: {e}")
         return TestConnectionResponse(valid=False, error=str(e))
+
+
+@router.post("/aws/verify", response_model=AWSVerificationReport)
+async def verify_aws_connection(req: AWSVerifyRequest):
+    """
+    Modular AWS Check: Runs a comprehensive diagnostic probe to verify
+    identity and service-level authority.
+    """
+    # 1. Resolve Credentials
+    access_key = req.access_key_id
+    secret_key = req.secret_access_key
+    region = req.region
+    connection_id = req.connection_id
+
+    if connection_id:
+        # Fetch from DB
+        cypher = "MATCH (c:CloudIntegration {id: $id}) RETURN properties(c) AS props"
+        rows = db.query(cypher, parameters={"id": connection_id})
+        if not rows:
+            raise HTTPException(status_code=404, detail="Connection not found")
+        
+        p = rows[0].get("props", {})
+        access_key = p.get("access_key_id")
+        secret_key = _deobfuscate(p.get("encrypted_secret_key", ""))
+        region = p.get("region", region) # Use saved region if not passed
+
+    if not access_key or not secret_key:
+        raise HTTPException(status_code=400, detail="Missing AWS credentials")
+
+    # 2. Run Diagnostics
+    client = AWSClient(
+        region_name=region,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key
+    )
+    verifier = AWSVerifier(client)
+
+    # A. Handshake (Identity)
+    valid, identity_msg = verifier.verify_identity()
+    if not valid:
+        # User defined requirement: 401 on identity failure
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Invalid Access/Secret Key pair."
+        )
+
+    # B. Authority Probe
+    checks = verifier.run_comprehensive_check()
+
+    # 3. Aggregate Status
+    failed_counts = len([c for c in checks if c["status"] == "FAIL"])
+    if failed_counts == 0:
+        overall = "healthy"
+    elif failed_counts < len(checks):
+        overall = "partial"
+    else:
+        overall = "disconnected"
+
+    return AWSVerificationReport(
+        connection_id=connection_id,
+        account_id=verifier.account_id,
+        overall_status=overall,
+        checks=checks
+    )
 
 
 @router.post("/connections", response_model=ConnectionOut, status_code=status.HTTP_201_CREATED)

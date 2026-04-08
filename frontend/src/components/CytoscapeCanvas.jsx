@@ -58,7 +58,9 @@ const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onCanvasClick,
     {
       selector: 'core',
       style: {
-        'active-bg-opacity': 0
+        'active-bg-opacity': 0,
+        'selection-box-opacity': 0,
+        'selection-box-border-width': 0
       }
     },
     {
@@ -269,7 +271,7 @@ const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onCanvasClick,
 
       <CytoscapeComponent
         elements={cyElements}
-        style={{ width: '100%', height: '100%' }}
+        style={{ width: '100%', height: '100%', outline: 'none' }}
         stylesheet={stylesheet}
         cy={(cy) => {
           cyRef.current = cy;

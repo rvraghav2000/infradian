@@ -87,7 +87,7 @@ function RegionNode({ layout, meta, dimmed, focused, theme, onNodeMouseDown, isD
                 position: 'relative',
                 // Dashed region border — matches the overall isometric grid aesthetic
                 border: focused
-                    ? `2px solid #007AFF`
+                    ? (isDark ? '2px solid rgba(255,255,255,0.3)' : '2px solid rgba(0,0,0,0.15)')
                     : `1.5px dashed ${isVPC
                         ? (isDark ? 'rgba(10,132,255,0.22)' : 'rgba(0,122,255,0.18)')
                         : (isDark ? 'rgba(94,92,230,0.22)' : 'rgba(88,86,214,0.14)')}`,
@@ -204,7 +204,7 @@ function CardNode({
                         : isPlanned
                             ? '2px dashed rgba(0,122,255,0.8)'
                             : focused
-                                ? '1.5px solid #007AFF'
+                                ? (isDark ? '1.5px solid rgba(255,255,255,0.3)' : '1.5px solid rgba(0,0,0,0.15)')
                                 : isExpanded
                                     ? '1px solid rgba(0,122,255,0.3)'
                                     : isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.07)',
@@ -214,7 +214,7 @@ function CardNode({
                         : isPlanned
                             ? 'none' // Handled by CSS animation
                             : focused
-                                ? (isDark ? '0 0 0 3px rgba(10,132,255,0.2), 0 4px 16px rgba(0,0,0,0.4)' : '0 0 0 3px rgba(0,122,255,0.12), 0 4px 16px rgba(0,0,0,0.06)')
+                                ? (isDark ? '0 4px 16px rgba(0,0,0,0.4)' : '0 4px 16px rgba(0,0,0,0.06)')
                                 : hovered
                                     ? (isDark ? '0 4px 20px rgba(0,0,0,0.4), 0 1px 4px rgba(255,255,255,0.04)' : '0 4px 20px rgba(0,0,0,0.1), 0 1px 4px rgba(0,0,0,0.06)')
                                     : (isDark ? '0 1px 3px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.03)'),
