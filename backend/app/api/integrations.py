@@ -22,6 +22,8 @@ from app.integrations.aws.inventory import AWSInventoryCollector
 from app.integrations.aws.normalize import AWSGraphNormalizer
 from app.integrations.aws.graph_sync import AWSGraphSync
 from app.integrations.aws.verifier import AWSVerifier
+from app.integrations.azure.verifier import AzureVerifier
+from app.integrations.gcp.verifier import GCPVerifier
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/cloud", tags=["cloud-connections"])
@@ -32,8 +34,17 @@ router = APIRouter(prefix="/cloud", tags=["cloud-connections"])
 class TestConnectionRequest(BaseModel):
     provider: str = Field(default="aws", description="Cloud provider")
     region: str = Field(default="us-east-1")
-    access_key_id: str = Field(..., min_length=1)
-    secret_access_key: str = Field(..., min_length=1)
+    # AWS
+    access_key_id: Optional[str] = Field(default=None)
+    secret_access_key: Optional[str] = Field(default=None)
+    # Azure
+    tenant_id: Optional[str] = None
+    client_id: Optional[str] = None
+    client_secret: Optional[str] = None
+    subscription_id: Optional[str] = None
+    # GCP
+    project_id: Optional[str] = None
+    service_account_info: Optional[dict] = None
 
 class TestConnectionResponse(BaseModel):
     valid: bool
@@ -45,8 +56,17 @@ class AddConnectionRequest(BaseModel):
     alias: str = Field(..., min_length=1, description="Human-friendly name")
     provider: str = Field(default="aws")
     region: str = Field(default="us-east-1")
-    access_key_id: str = Field(..., min_length=1)
-    secret_access_key: str = Field(..., min_length=1)
+    # AWS
+    access_key_id: Optional[str] = Field(default=None)
+    secret_access_key: Optional[str] = Field(default=None)
+    # Azure
+    tenant_id: Optional[str] = None
+    client_id: Optional[str] = None
+    client_secret: Optional[str] = None
+    subscription_id: Optional[str] = None
+    # GCP
+    project_id: Optional[str] = None
+    service_account_info: Optional[dict] = None
 
 class BootstrapConnectionRequest(BaseModel):
     alias: str = Field(default="Infradian Auto", description="Human-friendly name")
@@ -60,7 +80,7 @@ class ConnectionOut(BaseModel):
     provider: str
     region: str
     account_id: Optional[str] = None
-    access_key_id_masked: str
+    access_key_id_masked: Optional[str] = None
     status: str
     last_sync_at: Optional[str] = None
     created_at: str
@@ -95,6 +115,33 @@ class AWSVerificationReport(BaseModel):
     checks: List[AWSCheckResult]
 
 
+class AzureVerifyRequest(BaseModel):
+    connection_id: Optional[str] = Field(default=None)
+    tenant_id: Optional[str] = Field(default=None)
+    client_id: Optional[str] = Field(default=None)
+    client_secret: Optional[str] = Field(default=None)
+    subscription_id: Optional[str] = Field(default=None)
+
+class GCPVerifyRequest(BaseModel):
+    connection_id: Optional[str] = Field(default=None)
+    project_id: Optional[str] = Field(default=None)
+    service_account_info: Optional[dict] = Field(default=None)
+
+class CloudCheckResult(BaseModel):
+    service: str
+    status: str
+    message: str
+    missing_permissions: List[str] = Field(default_factory=list)
+    suggested_policy_snippet: Optional[str] = None
+
+class CloudVerificationReport(BaseModel):
+    cloud_provider: str
+    connection_id: Optional[str] = None
+    account_id: Optional[str] = None
+    overall_status: str
+    checks: List[CloudCheckResult]
+
+
 # ── Helpers ──────────────────────────────────────────────────────────
 
 def _obfuscate(plain: str) -> str:
@@ -115,20 +162,31 @@ def _mask_key(key_id: str) -> str:
 
 @router.post("/test", response_model=TestConnectionResponse)
 async def test_connection(req: TestConnectionRequest):
-    """Validate AWS credentials by calling STS GetCallerIdentity."""
+    """Validate credentials based on provider."""
     try:
-        client = AWSClient(
-            region_name=req.region,
-            aws_access_key_id=req.access_key_id,
-            aws_secret_access_key=req.secret_access_key,
-        )
-        sts = client.get_client("sts")
-        identity = sts.get_caller_identity()
-        return TestConnectionResponse(
-            valid=True,
-            account_id=identity.get("Account"),
-            arn=identity.get("Arn"),
-        )
+        if req.provider == "aws":
+            client = AWSClient(
+                region_name=req.region,
+                aws_access_key_id=req.access_key_id,
+                aws_secret_access_key=req.secret_access_key,
+            )
+            sts = client.get_client("sts")
+            identity = sts.get_caller_identity()
+            return TestConnectionResponse(
+                valid=True,
+                account_id=identity.get("Account"),
+                arn=identity.get("Arn"),
+            )
+        elif req.provider == "azure":
+            verifier = AzureVerifier(req.tenant_id, req.client_id, req.client_secret, req.subscription_id)
+            valid, msg = verifier.verify_identity()
+            return TestConnectionResponse(valid=valid, account_id=verifier.account_id, error=None if valid else msg)
+        elif req.provider == "gcp":
+            verifier = GCPVerifier(req.service_account_info, req.project_id)
+            valid, msg = verifier.verify_identity()
+            return TestConnectionResponse(valid=valid, account_id=verifier.account_id, error=None if valid else msg)
+        else:
+            return TestConnectionResponse(valid=False, error=f"Unsupported provider: {req.provider}")
     except Exception as e:
         logger.warning(f"Connection test failed: {e}")
         return TestConnectionResponse(valid=False, error=str(e))
@@ -198,19 +256,115 @@ async def verify_aws_connection(req: AWSVerifyRequest):
     )
 
 
+@router.post("/azure/verify", response_model=CloudVerificationReport)
+async def verify_azure_connection(req: AzureVerifyRequest):
+    """Modular Azure Check."""
+    tenant_id = req.tenant_id
+    client_id = req.client_id
+    client_secret = req.client_secret
+    subscription_id = req.subscription_id
+    connection_id = req.connection_id
+
+    if connection_id:
+        cypher = "MATCH (c:CloudIntegration {id: $id}) RETURN properties(c) AS props"
+        rows = db.query(cypher, parameters={"id": connection_id})
+        if not rows: raise HTTPException(status_code=404, detail="Connection not found")
+        p = rows[0].get("props", {})
+        tenant_id = p.get("tenant_id")
+        client_id = p.get("client_id")
+        client_secret = _deobfuscate(p.get("encrypted_client_secret", ""))
+        subscription_id = p.get("subscription_id", subscription_id)
+
+    if not all([tenant_id, client_id, client_secret]):
+        raise HTTPException(status_code=400, detail="Missing Azure credentials")
+
+    verifier = AzureVerifier(tenant_id, client_id, client_secret, subscription_id)
+    valid, identity_msg = verifier.verify_identity()
+    if not valid:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=identity_msg)
+
+    checks = verifier.run_comprehensive_check()
+    failed_counts = len([c for c in checks if c["status"] == "FAIL"])
+    overall = "healthy" if failed_counts == 0 else "partial" if failed_counts < len(checks) else "disconnected"
+
+    return CloudVerificationReport(
+        cloud_provider="azure",
+        connection_id=connection_id,
+        account_id=verifier.account_id,
+        overall_status=overall,
+        checks=checks
+    )
+
+
+@router.post("/gcp/verify", response_model=CloudVerificationReport)
+async def verify_gcp_connection(req: GCPVerifyRequest):
+    """Modular GCP Check."""
+    sa_info = req.service_account_info
+    project_id = req.project_id
+    connection_id = req.connection_id
+
+    if connection_id:
+        cypher = "MATCH (c:CloudIntegration {id: $id}) RETURN properties(c) AS props"
+        rows = db.query(cypher, parameters={"id": connection_id})
+        if not rows: raise HTTPException(status_code=404, detail="Connection not found")
+        p = rows[0].get("props", {})
+        sa_info = json.loads(_deobfuscate(p.get("encrypted_sa_json", "")))
+        project_id = p.get("project_id", project_id)
+
+    if not sa_info:
+        raise HTTPException(status_code=400, detail="Missing GCP credentials")
+
+    verifier = GCPVerifier(sa_info, project_id)
+    valid, identity_msg = verifier.verify_identity()
+    if not valid:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=identity_msg)
+
+    checks = verifier.run_comprehensive_check()
+    failed_counts = len([c for c in checks if c["status"] == "FAIL"])
+    overall = "healthy" if failed_counts == 0 else "partial" if failed_counts < len(checks) else "disconnected"
+
+    return CloudVerificationReport(
+        cloud_provider="gcp",
+        connection_id=connection_id,
+        account_id=verifier.account_id,
+        overall_status=overall,
+        checks=checks
+    )
+
+
 @router.post("/connections", response_model=ConnectionOut, status_code=status.HTTP_201_CREATED)
 async def add_connection(req: AddConnectionRequest):
     """Persist a new cloud integration to Neo4j after verifying credentials."""
-    # 1. Verify first
+    account_id = "unknown"
+    masked_key = "****"
+    
+    # 1. Verify credentials and get identity
     try:
-        client = AWSClient(
-            region_name=req.region,
-            aws_access_key_id=req.access_key_id,
-            aws_secret_access_key=req.secret_access_key,
-        )
-        sts = client.get_client("sts")
-        identity = sts.get_caller_identity()
-        account_id = identity.get("Account", "unknown")
+        if req.provider == "aws":
+            if not all([req.access_key_id, req.secret_access_key]):
+                raise Exception("Missing AWS credentials")
+            client = AWSClient(region_name=req.region, aws_access_key_id=req.access_key_id, aws_secret_access_key=req.secret_access_key)
+            identity = client.get_client("sts").get_caller_identity()
+            account_id = identity.get("Account", "unknown")
+            masked_key = _mask_key(req.access_key_id)
+        elif req.provider == "azure":
+            if not all([req.tenant_id, req.client_id, req.client_secret]):
+                raise Exception("Missing Azure credentials")
+            verifier = AzureVerifier(req.tenant_id, req.client_id, req.client_secret, req.subscription_id)
+            valid, msg = verifier.verify_identity()
+            if not valid: raise Exception(msg)
+            account_id = verifier.account_id
+            masked_key = _mask_key(req.client_id)
+        elif req.provider == "gcp":
+            if not req.service_account_info:
+                raise Exception("Missing GCP Service Account info")
+            verifier = GCPVerifier(req.service_account_info, req.project_id)
+            valid, msg = verifier.verify_identity()
+            if not valid: raise Exception(msg)
+            account_id = verifier.account_id
+            masked_key = req.service_account_info.get("client_email", "****")
+        else:
+            raise Exception(f"Unsupported provider: {req.provider}")
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Credentials invalid: {e}")
 
@@ -218,31 +372,42 @@ async def add_connection(req: AddConnectionRequest):
     conn_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
 
-    cypher = """
-    CREATE (c:CloudIntegration {
-        id: $id,
-        alias: $alias,
-        provider: $provider,
-        region: $region,
-        account_id: $account_id,
-        access_key_id: $access_key_id,
-        encrypted_secret_key: $encrypted_secret_key,
-        status: 'connected',
-        last_sync_at: null,
-        created_at: $created_at
-    })
-    RETURN properties(c) AS props
-    """
-    result = db.query(cypher, parameters={
+    # Generic storage pattern: store provider-specific fields
+    cypher_props = {
         "id": conn_id,
         "alias": req.alias,
         "provider": req.provider,
         "region": req.region,
         "account_id": account_id,
-        "access_key_id": req.access_key_id,
-        "encrypted_secret_key": _obfuscate(req.secret_access_key),
-        "created_at": now,
-    })
+        "status": 'connected',
+        "last_sync_at": None,
+        "created_at": now
+    }
+    
+    if req.provider == "aws":
+        cypher_props.update({
+            "access_key_id": req.access_key_id,
+            "encrypted_secret_key": _obfuscate(req.secret_access_key)
+        })
+    elif req.provider == "azure":
+        cypher_props.update({
+            "tenant_id": req.tenant_id,
+            "client_id": req.client_id,
+            "subscription_id": req.subscription_id,
+            "encrypted_client_secret": _obfuscate(req.client_secret)
+        })
+    elif req.provider == "gcp":
+        cypher_props.update({
+            "project_id": account_id,
+            "encrypted_sa_json": _obfuscate(json.dumps(req.service_account_info))
+        })
+
+    cypher = f"""
+    CREATE (c:CloudIntegration)
+    SET c = $props
+    RETURN properties(c) AS props
+    """
+    result = db.query(cypher, parameters={"props": cypher_props})
 
     if not result:
         raise HTTPException(status_code=500, detail="Failed to persist connection")
@@ -253,7 +418,7 @@ async def add_connection(req: AddConnectionRequest):
         provider=req.provider,
         region=req.region,
         account_id=account_id,
-        access_key_id_masked=_mask_key(req.access_key_id),
+        access_key_id_masked=masked_key,
         status="connected",
         last_sync_at=None,
         created_at=now,

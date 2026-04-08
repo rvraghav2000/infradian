@@ -5,14 +5,14 @@
 const BASE = '/api/v1/cloud';
 
 /**
- * Test an AWS connection without saving it.
+ * Test a cloud connection without saving it.
  * Returns { valid, account_id, arn, error }
  */
-export async function testAWSConnection({ region, access_key_id, secret_access_key }) {
+export async function testConnection(payload) {
   const res = await fetch(`${BASE}/test`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider: 'aws', region, access_key_id, secret_access_key }),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -25,11 +25,11 @@ export async function testAWSConnection({ region, access_key_id, secret_access_k
  * Save a new cloud integration.
  * Returns the created ConnectionOut object.
  */
-export async function addConnection({ alias, region, access_key_id, secret_access_key }) {
+export async function addConnection(payload) {
   const res = await fetch(`${BASE}/connections`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ alias, provider: 'aws', region, access_key_id, secret_access_key }),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
