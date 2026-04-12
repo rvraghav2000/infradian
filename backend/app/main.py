@@ -22,6 +22,8 @@ from .database import db
 from .analysis.api import router as analysis_router
 from .api.aws_ingestion import router as aws_router
 from .api.integrations import router as cloud_router
+from .api.uim_api import router as uim_router
+from .api.workspaces import router as workspace_router
 
 app = FastAPI(
     title="Infradian Data Engine",
@@ -174,6 +176,8 @@ async def get_nodes(account_id: Optional[str] = None) -> Dict[str, Any]:
                 
             nodes.append({
                 "id": node_id,
+                "account_id": props.get("account_id"),
+                "provider": props.get("provider"),
                 "type": props.get("type", "unknown"),
                 "label": props.get("name") or props.get("label") or node_id,
                 "status": props.get("status", "live"),
@@ -440,4 +444,5 @@ async def get_sample_graph() -> JSONResponse:
 app.include_router(analysis_router, prefix="/api/v1")
 app.include_router(aws_router, prefix="/api/v1")
 app.include_router(cloud_router, prefix="/api/v1")
-
+app.include_router(uim_router, prefix="/api/v1")
+app.include_router(workspace_router, prefix="/api/v1")

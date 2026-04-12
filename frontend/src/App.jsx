@@ -18,6 +18,9 @@ import AnalysisPanel from './components/AnalysisPanel';
 import SimulationSummary from './components/SimulationSummary';
 import TopActionsDrawer from './components/TopActionsDrawer';
 import CloudSettings from './components/CloudSettings';
+import ReadinessBadge from './components/ReadinessBadge';
+import WorkspaceManager from './components/WorkspaceManager';
+import DiffSummary from './components/DiffSummary';
 
 export default function App() {
   const [rawData, setRawData] = useState({ nodes: [], edges: [] });
@@ -37,14 +40,51 @@ export default function App() {
   const { 
     isSimulationMode, setIsSimulationMode, 
     blastRadius, clearAnalysis,
-    draftData, handleNodeDrop, handleDeleteDraftNode
+    draftData, handleNodeDrop, handleDeleteDraftNode,
+    cloudFilter, setCloudFilter,
+    activeAccounts,
+    interactionMode, setInteractionMode, connectSource, setConnectSource,
+    ghostNodeIds, toggleGhostNode,
+    hasUnsavedChanges,
+    handleAddDraftEdge,
   } = useAnalysis();
 
   const [isAnalysisOpen, setIsAnalysisOpen] = useState(false);
   const [isCloudSettingsOpen, setIsCloudSettingsOpen] = useState(false);
+  const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(false);
   const [accounts, setAccounts] = useState([]);
-  const [selectedAccount, setSelectedAccount] = useState('all');
   const initialLayoutPerformed = useRef(false);
+
+  // Derive provider from node type prefix
+  const getNodeProvider = (type) => {
+    if (!type) return 'aws';
+    if (type.startsWith('azure_')) return 'azure';
+    if (type.startsWith('gcp_')) return 'gcp';
+    return 'aws';
+  };
+
+  /* ── Filter Logic ──────────────────────────────────────────────── */
+  const filteredNodes = useMemo(() => {
+    let result = rawData.nodes || [];
+    
+    // Filter by cloud provider from Context
+    result = result.filter(n => {
+      const p = getNodeProvider(n.type);
+      return cloudFilter[p];
+    });
+
+    // Filter by explicit Account selection
+    if (activeAccounts !== null) {
+      result = result.filter(n => !n.account_id || activeAccounts.has(String(n.account_id)));
+    }
+
+    return result;
+  }, [rawData.nodes, cloudFilter, activeAccounts]);
+
+  const filteredEdges = useMemo(() => {
+    const visibleIds = new Set(filteredNodes.map(n => n.id));
+    return rawData.edges.filter(e => visibleIds.has(e.source_id) && visibleIds.has(e.target_id));
+  }, [rawData.edges, filteredNodes]);
 
 
   /* ── Layout Logic (Dagre Integration) ────────────────────────── */
@@ -59,7 +99,7 @@ export default function App() {
       try {
         const [accRes, nodesRes] = await Promise.all([
             fetch('/api/v1/accounts'),
-            fetch(`/api/v1/nodes?account_id=${selectedAccount}`)
+            fetch(`/api/v1/nodes?account_id=all`)
         ]);
         
         if (!accRes.ok || !nodesRes.ok) throw new Error(`HTTP fetch failed`);
@@ -84,18 +124,31 @@ export default function App() {
     loadData();
     const timer = setInterval(loadData, 5000); // Poll every 5s
     return () => clearInterval(timer);
-  }, [selectedAccount, applyAutoLayout]);
+  }, [applyAutoLayout]);
 
   // Removed automatic layout useEffect to prevent constant reorganization.
   // Layout is now triggered manually via applyAutoLayout() or on initial paint.
 
   /* ── Node Handling ────────────────────────────────────────────── */
   const handleNodeClick = useCallback((nodeId, e) => {
+    if (interactionMode === 'connect') {
+      if (!connectSource) {
+        setConnectSource(nodeId);
+      } else {
+        if (connectSource !== nodeId) {
+          handleAddDraftEdge(connectSource, nodeId);
+        }
+        setConnectSource(null);
+        setInteractionMode('select');
+      }
+      return;
+    }
+
     // Single click now handles both focus and opens analysis sidebar
     setFocusedNodeId(nodeId);
     setExpandedNodeId(null); // Close any expanded pipeline cards
     setIsAnalysisOpen(true); // Open analysis sidebar immediately
-  }, []);
+  }, [interactionMode, connectSource, setConnectSource, handleAddDraftEdge, setInteractionMode]);
 
   /* ── God mode select → pan + focus ───────────────────────────── */
   const handleGodModeSelect = useCallback((nodeId) => {
@@ -160,6 +213,11 @@ export default function App() {
       }
       // Node Deletion Shortcut
       if (focusedNodeId && (e.key === 'Delete' || e.key === 'Backspace')) {
+        const activeTag = document.activeElement ? document.activeElement.tagName : '';
+        if (['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag)) {
+          return; // Allow native typing deletion
+        }
+
         console.log("Delete key pressed for:", focusedNodeId);
         // Only allow deletion of user-added nodes (prefixed with 'planned-')
         if (focusedNodeId.startsWith('planned-')) {
@@ -330,25 +388,50 @@ export default function App() {
           </button>
           
           <div className="w-px h-4 mx-1" style={{ background: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
-          
-          {accounts.length > 0 && (
-              <>
-                  <select
-                      value={selectedAccount}
-                      onChange={(e) => setSelectedAccount(e.target.value)}
-                      className="bg-transparent border-0 outline-none text-[11px] font-medium px-2 py-1 appearance-none cursor-pointer text-center tracking-wide"
-                      style={{
-                          color: theme === 'dark' ? '#aeaeb2' : '#86868b'
-                      }}
+
+          {/* Interaction Mode Toggle (visible in draft mode) */}
+          {isSimulationMode && (
+            <>
+              <div className="flex items-center gap-0.5 p-0.5 rounded-lg" style={{ background: theme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }}>
+                {[
+                  { mode: 'select', icon: '↖', tip: 'Select' },
+                  { mode: 'connect', icon: '⤳', tip: 'Draw Edge' },
+                ].map(m => (
+                  <button
+                    key={m.mode}
+                    onClick={(e) => { e.stopPropagation(); setInteractionMode(m.mode); setConnectSource(null); }}
+                    className="w-7 h-7 rounded-md flex items-center justify-center cursor-pointer border-0 text-sm transition-all"
+                    title={m.tip}
+                    style={{
+                      background: interactionMode === m.mode ? (theme === 'dark' ? 'rgba(255,255,255,0.12)' : '#fff') : 'transparent',
+                      color: interactionMode === m.mode ? (theme === 'dark' ? '#fff' : '#1d1d1f') : (theme === 'dark' ? '#636366' : '#aeaeb2'),
+                      boxShadow: interactionMode === m.mode ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    }}
                   >
-                      <option value="all">ALL ENVIRONMENTS</option>
-                      {accounts.map(acc => (
-                          <option key={acc} value={acc}>ACC: {acc}</option>
-                      ))}
-                  </select>
-                  <div className="w-px h-4 mx-1 break-hidden border-0" style={{ background: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
-              </>
+                    {m.icon}
+                  </button>
+                ))}
+              </div>
+              <div className="w-px h-4 mx-1" style={{ background: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
+            </>
           )}
+
+          {/* Workspace Save Button */}
+          <button
+            onClick={(e) => { e.stopPropagation(); setIsWorkspaceOpen(true); }}
+            className="flex items-center gap-1.5 px-2.5 h-8 rounded-md cursor-pointer border-0 text-xs font-medium transition-all"
+            style={{
+              background: hasUnsavedChanges ? 'rgba(255,149,0,0.1)' : 'transparent',
+              color: hasUnsavedChanges ? '#FF9500' : (theme === 'dark' ? '#aeaeb2' : '#86868b'),
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = hasUnsavedChanges ? 'rgba(255,149,0,0.15)' : (theme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)')}
+            onMouseLeave={e => e.currentTarget.style.background = hasUnsavedChanges ? 'rgba(255,149,0,0.1)' : 'transparent'}
+          >
+            <span>💾</span>
+            {hasUnsavedChanges && <span className="w-1.5 h-1.5 rounded-full bg-[#FF9500] animate-pulse" />}
+          </button>
+
+          <div className="w-px h-4 mx-1" style={{ background: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
 
           <button
             onClick={(e) => { e.stopPropagation(); setIsCloudSettingsOpen(true); }}
@@ -441,22 +524,27 @@ export default function App() {
       <div className="w-full h-full relative">
         <CytoscapeCanvas 
           graphData={{
-              nodes: [...rawData.nodes, ...draftData.nodes],
-              edges: [...rawData.edges, ...draftData.edges]
+              nodes: [...filteredNodes, ...draftData.nodes],
+              edges: [...filteredEdges, ...draftData.edges]
           }}
           layoutTrigger={layoutTrigger}
           onNodeClick={(id) => handleNodeClick(id)}
+          onNodeRightClick={(id) => {
+            if (isSimulationMode) toggleGhostNode(id);
+          }}
           onCanvasClick={() => clearFocus()}
           onNodeHover={setHoveredNodeId}
           onNodeDrop={handleNodeDrop}
           theme={theme}
+          ghostNodeIds={ghostNodeIds}
         />
 
         
           {/* DOM Overlays managed by Cytoscape WebGL physics */}
         <div className="absolute inset-0 pointer-events-none z-10" style={{ transformOrigin: '0 0' }}>
-           {[...rawData.nodes, ...draftData.nodes].map(node => {
+           {[...filteredNodes, ...draftData.nodes].map(node => {
              const isRegion = ['aws_vpc', 'aws_subnet'].includes(node.type);
+             const isGhost = ghostNodeIds.has(node.id);
              return (
                <div 
                  id={`infranode-${node.id}`} 
@@ -467,7 +555,6 @@ export default function App() {
                    opacity: blastRadius?.impactedNodes 
                             && !blastRadius.impactedNodes.some(n => String(n.id) === String(node.id)) 
                             && String(node.id) !== String(blastRadius.nodeId) ? 0.25 : 1,
-                   // Region nodes need explicit dimensions so their children can use width: 100%
                    ...(isRegion ? {
                      width: 'var(--region-w, 200px)',
                      height: 'var(--region-h, 100px)',
@@ -486,6 +573,9 @@ export default function App() {
                    onNodeClick={handleNodeClick}
                    onGodModeSelect={handleGodModeSelect}
                    physicsHovered={hoveredNodeId === node.id}
+                   isGhost={isGhost}
+                   onToggleGhost={() => toggleGhostNode(node.id)}
+                   interactionMode={interactionMode}
                  />
                </div>
              );
@@ -533,8 +623,8 @@ export default function App() {
 
       {/* Command Palette */}
       <CommandPalette
-        nodes={[...rawData.nodes, ...draftData.nodes]}
-        edges={[...rawData.edges, ...draftData.edges]}
+        nodes={[...filteredNodes, ...draftData.nodes]}
+        edges={[...filteredEdges, ...draftData.edges]}
         isOpen={cmdKOpen}
         onClose={() => setCmdKOpen(false)}
         onSelect={handleGodModeSelect}
@@ -545,7 +635,7 @@ export default function App() {
       <AnimatePresence>
         {focusedNodeId && isAnalysisOpen && (
             <AnalysisPanel 
-                node={[...rawData.nodes, ...draftData.nodes].find(n => String(n.id) === String(focusedNodeId))}
+                node={[...filteredNodes, ...draftData.nodes].find(n => String(n.id) === String(focusedNodeId))}
                 theme={theme}
                 onClose={() => clearFocus()}
                 onDeleteNode={handleDeleteNode}
@@ -564,12 +654,34 @@ export default function App() {
       {isSimulationMode && (
         <PlanningPanel theme={theme} />
       )}
+
+      {/* Readiness Badge (Draft Mode) */}
+      <AnimatePresence>
+        {isSimulationMode && (
+          <ReadinessBadge theme={theme} />
+        )}
+      </AnimatePresence>
+
+      {/* Diff Summary (Draft Mode) */}
+      <AnimatePresence>
+        <DiffSummary theme={theme} rawData={{ nodes: filteredNodes, edges: filteredEdges }} />
+      </AnimatePresence>
       
       <CloudSettings
         isOpen={isCloudSettingsOpen}
         onClose={() => setIsCloudSettingsOpen(false)}
         theme={theme}
       />
+
+      <AnimatePresence>
+        {isWorkspaceOpen && (
+          <WorkspaceManager
+            isOpen={isWorkspaceOpen}
+            onClose={() => setIsWorkspaceOpen(false)}
+            theme={theme}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -14,6 +14,7 @@ export default function AnalysisPanel({ node, theme = 'light', onClose, onDelete
     activePath, activePathStep,
     loadBlastRadius, loadSafeDelete, loadSimulation,
     selectPath, stepPath,
+    updateDraftNode,
   } = useAnalysis();
 
   const isDraft = String(node?.id || '').startsWith('planned-');
@@ -49,7 +50,7 @@ export default function AnalysisPanel({ node, theme = 'light', onClose, onDelete
       initial={{ x: 400, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: 400, opacity: 0 }}
-      className="fixed top-24 right-6 w-96 h-[calc(100vh-140px)] z-50 flex flex-col"
+      className="fixed top-24 right-6 w-96 h-[calc(100vh-140px)] z-[60] flex flex-col"
     >
       <GlassPanel intensity="high" className="flex-1 flex flex-col border-white/10 shadow-2xl">
         {/* Header */}
@@ -106,9 +107,41 @@ export default function AnalysisPanel({ node, theme = 'light', onClose, onDelete
               transition={{ duration: 0.2 }}
             >
               {isDraft ? (
-                <div className="flex flex-col items-center justify-center pt-10 opacity-60">
-                    <span className="text-4xl mb-3">⚙️</span>
-                    <p className="text-xs text-center">Draft node configuration will be available soon.</p>
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: isDark ? '#aeaeb2' : '#86868b' }}>Resource Label</label>
+                    <input 
+                      className="px-3 py-2 border rounded-lg text-xs"
+                      style={{
+                        background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.02)',
+                        borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+                        color: isDark ? '#fff' : '#1d1d1f'
+                      }}
+                      value={node.label || ''}
+                      onChange={(e) => updateDraftNode(node.id, { label: e.target.value })}
+                      placeholder="e.g. backend-api"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: isDark ? '#aeaeb2' : '#86868b' }}>Resource Type</label>
+                    <select
+                      className="px-3 py-2 border rounded-lg text-xs"
+                      style={{
+                        background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.02)',
+                        borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+                        color: isDark ? '#fff' : '#1d1d1f'
+                      }}
+                      value={node.type || 'aws_ec2'}
+                      onChange={(e) => updateDraftNode(node.id, { type: e.target.value })}
+                    >
+                      <option value="aws_ec2">AWS EC2</option>
+                      <option value="aws_rds">AWS RDS</option>
+                      <option value="aws_lambda">AWS Lambda</option>
+                      <option value="aws_s3">AWS S3</option>
+                      <option value="azure_vm">Azure VM</option>
+                      <option value="gcp_ce">GCP Compute</option>
+                    </select>
+                  </div>
                 </div>
               ) : (
                 <>

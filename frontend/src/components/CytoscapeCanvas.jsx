@@ -299,7 +299,12 @@ const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onCanvasClick,
               if (onNodeClick) onNodeClick(originalId, e.originalEvent);
             });
 
-
+            cy.on('cxttap', 'node', (e) => {
+              const originalId = e.target.data('original_id') !== undefined ? e.target.data('original_id') : e.target.id();
+              if (cy.scratch('onNodeRightClick')) {
+                 cy.scratch('onNodeRightClick')(originalId, e.originalEvent);
+              }
+            });
             // Tap event for the canvas background
             cy.on('tap', (e) => {
               if (e.target === cy && onCanvasClick) {

@@ -16,6 +16,9 @@ from app.analysis.engine.simulation import RemovalSimulator
 from app.analysis.engine.confidence import ConfidenceModel
 from app.analysis.engine.ranking import ActionRanker
 from app.analysis.engine.explanation import explain_blast_radius, explain_safe_delete, explain_simulation
+from app.analysis.engine.diff_engine import DiffEngine
+from app.analysis.engine.validation import ArchitectureValidator
+from app.analysis.engine.readiness import ReadinessScorer
 
 from typing import List, Optional
 from app.models import Node, Edge
@@ -61,3 +64,50 @@ class DecisionEngine:
     def top_actions(self, limit: int = 5) -> dict:
         ranker = ActionRanker(self.graph, self.resilience, self.confidence_model)
         return ranker.rank(limit)
+
+    def validate(self) -> dict:
+        """Run architecture validation rules."""
+        validator = ArchitectureValidator(self.graph)
+        return validator.validate()
+
+    def readiness(self) -> dict:
+        """Compute readiness/completeness scores."""
+        scorer = ReadinessScorer(self.graph)
+        return scorer.score()
+
+    def diff(self, proposed_nodes: List[Node], proposed_edges: List[Edge]) -> dict:
+        """Compute diff between current graph and a proposed graph."""
+        proposed_graph = AnalysisGraph(proposed_nodes, proposed_edges)
+        differ = DiffEngine(self.graph, proposed_graph)
+        return differ.compute_diff().to_dict()
+
+    def simulate_mutations(
+        self,
+        add_nodes: Optional[List[Node]] = None,
+        remove_node_ids: Optional[List[str]] = None,
+        add_edges: Optional[List[Edge]] = None,
+    ) -> dict:
+        """Simulate graph mutations and return impact analysis."""
+        mutated = self.graph.clone_with_mutations(
+            add_nodes=add_nodes,
+            remove_node_ids=remove_node_ids,
+            add_edges=add_edges,
+        )
+
+        # Compute diff
+        differ = DiffEngine(self.graph, mutated)
+        diff_result = differ.compute_diff().to_dict()
+
+        # Validate proposed
+        validator = ArchitectureValidator(mutated)
+        validation = validator.validate()
+
+        # Readiness of proposed
+        scorer = ReadinessScorer(mutated)
+        readiness = scorer.score()
+
+        return {
+            "diff": diff_result,
+            "validation": validation,
+            "readiness": readiness,
+        }

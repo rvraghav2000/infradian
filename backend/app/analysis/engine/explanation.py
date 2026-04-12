@@ -120,4 +120,9 @@ def explain_action(
         confidence = context.get("confidence", 0)
         return f"Investigate {label} ({node_id}): dependency evidence is weak (confidence: {confidence:.0%})."
 
+    if action_type == "PLAN":
+        reasons = context.get("reasons", [])
+        reason_str = reasons[0] if reasons else "needs review"
+        return f"Planned node {label} ({node_id}): {reason_str}."
+
     return f"{label} ({node_id}): score {score:.2f}."

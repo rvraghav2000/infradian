@@ -19,6 +19,16 @@ MODE_PENALTIES: Dict[str, float] = {
     "control_plane": 1.5,
 }
 
+# Interaction type → traversal penalty
+INTERACTION_PENALTIES: Dict[str, float] = {
+    "runtime_call": 1.0,
+    "async_event": 1.8,
+    "containment": 0.5,  # structural containment is tight coupling
+    "control_dependency": 1.5,
+    "data_dependency": 1.2,
+    "fallback": 4.0,
+}
+
 CRITICALITY_RANK: Dict[str, int] = {
     "critical": 4,
     "high": 3,
@@ -37,6 +47,9 @@ class EdgeRecord:
     mode: str
     confidence: float
     traffic_share: float
+    interaction_type: str = "runtime_call"
+    primary: bool = True
+    inferred: bool = False
 
 
 @dataclass
@@ -49,7 +62,8 @@ class AdjEntry:
 def compute_edge_weight(edge: Edge) -> float:
     """Compute traversal cost for an edge.
 
-    Formula: base × (1 / confidence) × mode_penalty × (1 / traffic_share)
+    Formula: base × (1 / confidence) × mode_penalty × interaction_penalty × (1 / traffic_share)
+             × primary_factor × inferred_factor
     Lower weight = stronger / more important dependency.
     """
     if edge.edge_weight is not None:
@@ -58,8 +72,15 @@ def compute_edge_weight(edge: Edge) -> float:
     base = 1.0
     conf_factor = 1.0 / max(edge.confidence, 0.01)
     mode_factor = MODE_PENALTIES.get(edge.dependency_mode, 1.0)
+    interaction_factor = INTERACTION_PENALTIES.get(
+        getattr(edge, 'interaction_type', 'runtime_call'), 1.0
+    )
     traffic_factor = 1.0 / max(edge.traffic_share, 0.01)
-    return base * conf_factor * mode_factor * traffic_factor
+    # Non-primary edges are weaker paths
+    primary_factor = 1.0 if getattr(edge, 'primary', True) else 2.0
+    # Inferred edges carry more uncertainty
+    inferred_factor = 2.0 if getattr(edge, 'inferred', False) else 1.0
+    return base * conf_factor * mode_factor * interaction_factor * traffic_factor * primary_factor * inferred_factor
 
 
 class AnalysisGraph:
@@ -86,6 +107,9 @@ class AnalysisGraph:
                 mode=edge.dependency_mode,
                 confidence=edge.confidence,
                 traffic_share=edge.traffic_share,
+                interaction_type=getattr(edge, 'interaction_type', 'runtime_call'),
+                primary=getattr(edge, 'primary', True),
+                inferred=getattr(edge, 'inferred', False),
             )
             self.adj[edge.source].out.append(rec)
             self.adj[edge.target].inc.append(rec)
@@ -137,3 +161,47 @@ class AnalysisGraph:
             if rec.source != excluded_node_id and rec.target != excluded_node_id
         ]
         return AnalysisGraph(filtered_nodes, filtered_edges)
+
+    def clone_with_mutations(
+        self,
+        add_nodes: Optional[List[Node]] = None,
+        remove_node_ids: Optional[List[str]] = None,
+        add_edges: Optional[List[Edge]] = None,
+        remove_edge_ids: Optional[List[str]] = None,
+    ) -> "AnalysisGraph":
+        """Create a mutated copy: add/remove nodes and edges in one shot.
+
+        Planned nodes that lack real metrics get safe defaults automatically.
+        """
+        remove_ids = set(remove_node_ids or [])
+        remove_eids = set(remove_edge_ids or [])
+
+        # Start with existing nodes/edges, minus removals
+        nodes = [n for n in self.nodes_map.values() if n.id not in remove_ids]
+        edges = [
+            rec.edge for rec in self.all_edge_records
+            if rec.edge.id not in remove_eids
+            and rec.source not in remove_ids
+            and rec.target not in remove_ids
+        ]
+
+        # Add new nodes
+        existing_ids = {n.id for n in nodes}
+        for n in (add_nodes or []):
+            if n.id not in existing_ids:
+                nodes.append(n)
+                existing_ids.add(n.id)
+
+        # Add new edges
+        for e in (add_edges or []):
+            edges.append(e)
+
+        return AnalysisGraph(nodes, edges)
+
+    def get_nodes_by_status(self, status: str) -> List[Node]:
+        """Return all nodes matching a given status."""
+        return [n for n in self.nodes_map.values() if n.status == status]
+
+    def get_nodes_by_layer(self, layer: str) -> List[Node]:
+        """Return all nodes matching a given layer."""
+        return [n for n in self.nodes_map.values() if n.resolved_layer() == layer]

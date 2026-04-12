@@ -29,7 +29,7 @@ class ActionRanker:
         self.confidence_model = confidence_model
 
     def rank(self, limit: int = 5) -> dict:
-        """Compute all three ranked action lists."""
+        """Compute all ranked action lists, including planned insights."""
         importance_map = self.resilience.compute_all_importance()
         safe_delete_engine = SafeDeleteEngine(self.graph, self.resilience, self.confidence_model)
 
@@ -37,12 +37,14 @@ class ActionRanker:
         safe_deletions = self._rank_safe_deletions(safe_delete_engine, importance_map, limit)
         waste = self._rank_waste(limit)
         investigations = self._rank_investigations(limit)
+        planned_insights = self._rank_planned_insights(limit)
 
         return {
             "topRisks": top_risks,
             "safeDeletionCandidates": safe_deletions,
             "wasteCandidates": waste,
             "investigationCandidates": investigations,
+            "plannedInsights": planned_insights,
         }
 
     def _rank_risks(self, importance_map: dict, limit: int) -> List[dict]:
@@ -243,5 +245,85 @@ class ActionRanker:
                 "recommendedNextStep": "Add Datadog/Cloudwatch tags to collect metrics"
             })
             
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return results[:limit]
+
+    def _rank_planned_insights(self, limit: int) -> List[dict]:
+        """Generate insights for planned/draft nodes in the graph."""
+        results = []
+
+        planned_nodes = [
+            n for n in self.graph.nodes_map.values()
+            if n.status in ("planned", "expected")
+        ]
+        if not planned_nodes:
+            return []
+
+        for node in planned_nodes:
+            score = 0.0
+            reasons = []
+
+            # 1. Check if planned node is isolated
+            out_edges = self.graph.get_outbound(node.id)
+            in_edges = self.graph.get_inbound(node.id)
+            if len(out_edges) == 0 and len(in_edges) == 0 and node.parent_id is None:
+                score += 0.4
+                reasons.append("Isolated — no connections to existing infrastructure")
+
+            # 2. Check missing required dependencies
+            required = node.resolved_required_deps()
+            connected_types = set()
+            for e in out_edges:
+                t = self.graph.get_node(e.target)
+                if t:
+                    connected_types.add(t.type)
+            for e in in_edges:
+                s = self.graph.get_node(e.source)
+                if s:
+                    connected_types.add(s.type)
+            if node.parent_id:
+                p = self.graph.get_node(node.parent_id)
+                if p:
+                    connected_types.add(p.type)
+
+            missing = [r for r in required if r not in connected_types]
+            if missing:
+                score += 0.3
+                reasons.append(f"Missing required: {', '.join(missing)}")
+
+            # 3. Check if planned node improves redundancy for existing critical nodes
+            if len(in_edges) > 0:
+                for e in in_edges:
+                    source_node = self.graph.get_node(e.source)
+                    if source_node and source_node.criticality in ("critical", "high"):
+                        score += 0.2
+                        reasons.append(f"Adds path to critical node: {source_node.label}")
+                        break
+
+            # 4. Check if adding this node creates new SPOF risk
+            if len(out_edges) > 2:
+                score += 0.15
+                reasons.append(f"New node with {len(out_edges)} downstream deps — potential SPOF")
+
+            if score > 0:
+                results.append({
+                    "id": f"plan-{node.id}",
+                    "nodeId": node.id,
+                    "actionType": "PLAN",
+                    "title": f"Review Planned: {node.label}",
+                    "summary": explain_action("PLAN", node.id, node.label, score, {
+                        "reasons": reasons,
+                    }),
+                    "score": round(score, 3),
+                    "confidence": 0.8,
+                    "impactScore": 0,
+                    "costDelta": 0,
+                    "priorityLevel": "Medium" if score > 0.5 else "Low",
+                    "reasons": reasons,
+                    "blockers": [],
+                    "affectedSystems": len(out_edges) + len(in_edges),
+                    "recommendedNextStep": "Complete dependencies and run validation" if missing else "Review topology before deploying",
+                })
+
         results.sort(key=lambda x: x["score"], reverse=True)
         return results[:limit]

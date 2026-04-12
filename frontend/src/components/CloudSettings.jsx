@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAnalysis } from '../context/AnalysisContext';
 import {
   testConnection,
   addConnection,
@@ -89,6 +90,7 @@ function StatusBadge({ status, isDark }) {
 
 export default function CloudSettings({ isOpen, onClose, theme = 'light' }) {
   const isDark = theme === 'dark';
+  const { activeAccounts, setActiveAccounts } = useAnalysis();
 
   // ── State ──────────────────────────────────────────────────────
   const [connections, setConnections] = useState([]);
@@ -690,23 +692,54 @@ export default function CloudSettings({ isOpen, onClose, theme = 'light' }) {
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {connections.map(conn => (
-                  <ConnectionCard
-                    key={conn.id}
-                    conn={conn}
-                    isDark={isDark}
-                    cardBg={cardBg}
-                    cardBorder={cardBorder}
-                    textPrim={textPrim}
-                    textSec={textSec}
-                    textDim={textDim}
-                    isSyncing={syncingIds.has(conn.id)}
-                    isDeleting={deletingIds.has(conn.id)}
-                    syncResult={syncResults[conn.id]}
-                    onSync={() => handleSync(conn.id)}
-                    onDelete={() => handleDelete(conn.id)}
-                  />
-                ))}
+                {connections.map(conn => {
+                  const isVisible = activeAccounts === null 
+                    ? true 
+                    : activeAccounts.has(String(conn.account_id));
+                  
+                  return (
+                    <ConnectionCard
+                      key={conn.id}
+                      conn={conn}
+                      isDark={isDark}
+                      cardBg={cardBg}
+                      cardBorder={cardBorder}
+                      textPrim={textPrim}
+                      textSec={textSec}
+                      textDim={textDim}
+                      isSyncing={syncingIds.has(conn.id)}
+                      isDeleting={deletingIds.has(conn.id)}
+                      syncResult={syncResults[conn.id]}
+                      isVisible={isVisible}
+                      onToggleVisible={() => {
+                        let next;
+                        if (activeAccounts === null) {
+                          // If it was null, initialize with all accounts first
+                          next = new Set(connections.map(c => String(c.account_id)));
+                        } else {
+                          // Otherwise clone existing
+                          next = new Set(activeAccounts);
+                        }
+                        
+                        const accStr = String(conn.account_id);
+                        if (next.has(accStr)) {
+                          next.delete(accStr);
+                        } else {
+                          next.add(accStr);
+                        }
+                        
+                        // If everything is turned back on, reset to null
+                        if (next.size === connections.length) {
+                           setActiveAccounts(null);
+                        } else {
+                           setActiveAccounts(next);
+                        }
+                      }}
+                      onSync={() => handleSync(conn.id)}
+                      onDelete={() => handleDelete(conn.id)}
+                    />
+                  );
+                })}
               </div>
             )}
           </div>
@@ -724,7 +757,7 @@ export default function CloudSettings({ isOpen, onClose, theme = 'light' }) {
 
 function ConnectionCard({
   conn, isDark, cardBg, cardBorder, textPrim, textSec, textDim,
-  isSyncing, isDeleting, syncResult, onSync, onDelete,
+  isSyncing, isDeleting, syncResult, isVisible, onToggleVisible, onSync, onDelete,
 }) {
   const [hovered, setHovered] = useState(false);
 
@@ -734,20 +767,34 @@ function ConnectionCard({
     <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onClick={onToggleVisible}
       style={{
         padding: '14px 16px', borderRadius: 14,
-        background: hovered
-          ? (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.85)')
-          : cardBg,
-        border: `1px solid ${hovered ? (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)') : cardBorder}`,
-        borderLeft: `3px solid ${providerColor}`,
+        cursor: 'pointer',
+        background: isVisible
+          ? (hovered ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.95)') : (isDark ? 'rgba(255,255,255,0.04)' : cardBg))
+          : (hovered ? (isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.6)') : cardBg),
+        border: `1px solid ${isVisible ? providerColor + '60' : (hovered ? (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)') : cardBorder)}`,
+        borderLeft: `3px solid ${isVisible ? providerColor : (isDark ? '#333' : '#ddd')}`,
         transition: 'all 0.15s',
+        opacity: isVisible ? 1 : 0.6,
+        boxShadow: isVisible ? `0 0 10px ${providerColor}15` : 'none',
       }}
     >
       {/* Top row: alias + provider icon + badge */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ color: providerColor, opacity: 0.8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <input
+            type="checkbox"
+            checked={isVisible}
+            onChange={() => {}} // React controlled wrapper
+            onClick={(e) => { e.stopPropagation(); onToggleVisible(); }}
+            style={{ 
+              cursor: 'pointer', margin: 0, transform: 'scale(1.2)', 
+              accentColor: providerColor 
+            }}
+          />
+          <div style={{ color: isVisible ? providerColor : (isDark ? '#555' : '#aaa'), transition: 'color 0.2s' }}>
             {conn.provider === 'aws' && <Icons.AWS />}
             {conn.provider === 'azure' && <Icons.Azure />}
             {conn.provider === 'gcp' && <Icons.GCP />}
@@ -755,6 +802,7 @@ function ConnectionCard({
           <span style={{
             fontSize: 13, fontWeight: 600, color: textPrim,
             letterSpacing: '-0.01em',
+            textDecoration: isVisible ? 'none' : 'line-through',
           }}>
             {conn.alias}
           </span>

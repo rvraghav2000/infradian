@@ -34,6 +34,82 @@ class NodeStatus(str, Enum):
 
     LIVE = "live"
     PLANNED = "planned"
+    EXPECTED = "expected"
+    SIMULATED = "simulated"
+    REMOVED = "removed"
+
+
+class NodeLayer(str, Enum):
+    """Architectural layer classification for a Node."""
+
+    RUNTIME = "runtime"
+    STRUCTURAL = "structural"
+    DATA = "data"
+    CONTROL_PLANE = "control_plane"
+    EVENTING = "eventing"
+
+
+class InteractionType(str, Enum):
+    """Semantic interaction type for an Edge."""
+
+    RUNTIME_CALL = "runtime_call"
+    ASYNC_EVENT = "async_event"
+    CONTAINMENT = "containment"
+    CONTROL_DEPENDENCY = "control_dependency"
+    DATA_DEPENDENCY = "data_dependency"
+    FALLBACK = "fallback"
+
+
+# ── Layer auto-classification from node type ─────────────────────────
+
+_TYPE_LAYER_MAP: dict[str, NodeLayer] = {
+    "aws_vpc": NodeLayer.STRUCTURAL,
+    "aws_subnet": NodeLayer.STRUCTURAL,
+    "aws_security_group": NodeLayer.STRUCTURAL,
+    "aws_instance": NodeLayer.RUNTIME,
+    "aws_lambda": NodeLayer.RUNTIME,
+    "aws_lambda_function": NodeLayer.RUNTIME,
+    "aws_alb": NodeLayer.RUNTIME,
+    "aws_target_group": NodeLayer.RUNTIME,
+    "aws_db_instance": NodeLayer.DATA,
+    "aws_elasticache": NodeLayer.DATA,
+    "aws_s3": NodeLayer.DATA,
+    "nosql_db": NodeLayer.DATA,
+    "aws_cloudwatch": NodeLayer.CONTROL_PLANE,
+    "aws_secrets_manager": NodeLayer.CONTROL_PLANE,
+    "aws_waf": NodeLayer.CONTROL_PLANE,
+    "aws_route53": NodeLayer.CONTROL_PLANE,
+    "aws_cloudfront": NodeLayer.RUNTIME,
+    "aws_api_gateway": NodeLayer.RUNTIME,
+    "cicd_github_actions": NodeLayer.CONTROL_PLANE,
+    "sre_pagerduty": NodeLayer.EVENTING,
+    "cloud_provider": NodeLayer.STRUCTURAL,
+    "k8s_cluster": NodeLayer.STRUCTURAL,
+    "generic_container": NodeLayer.RUNTIME,
+}
+
+
+def infer_layer(node_type: str) -> NodeLayer:
+    """Auto-classify a node type into an architectural layer."""
+    return _TYPE_LAYER_MAP.get(node_type, NodeLayer.RUNTIME)
+
+
+# ── Required dependency rules by node type ───────────────────────────
+
+_REQUIRED_DEPS: dict[str, list[str]] = {
+    "aws_instance": ["aws_subnet"],
+    "aws_lambda": [],
+    "aws_lambda_function": [],
+    "aws_db_instance": ["aws_subnet"],
+    "aws_alb": ["aws_vpc"],
+    "aws_target_group": ["aws_alb"],
+    "aws_subnet": ["aws_vpc"],
+}
+
+
+def infer_required_deps(node_type: str) -> list[str]:
+    """Return required dependency types for a node type."""
+    return _REQUIRED_DEPS.get(node_type, [])
 
 
 # ── Sub-models ───────────────────────────────────────────────────────
@@ -177,6 +253,44 @@ class Node(BaseModel):
         description="Last time telemetry was received from this resource.",
     )
 
+    # ── UIM operational fields ────────────────────────────────────────
+    layer: Optional[str] = Field(
+        default=None,
+        description="Architectural layer: runtime, structural, data, control_plane, eventing. Auto-inferred if None.",
+    )
+    removable: bool = Field(
+        default=True,
+        description="Whether this node can be removed by users.",
+    )
+    supports_simulation: bool = Field(
+        default=True,
+        description="Whether this node can participate in simulations.",
+    )
+    required_dependencies: list[str] = Field(
+        default_factory=list,
+        description="List of node types this resource MUST connect to.",
+    )
+    optional_dependencies: list[str] = Field(
+        default_factory=list,
+        description="List of node types this resource MAY connect to.",
+    )
+    tags: dict[str, str] = Field(
+        default_factory=dict,
+        description="User-defined key-value tags.",
+    )
+
+    def resolved_layer(self) -> str:
+        """Return layer, auto-inferring from type if not explicitly set."""
+        if self.layer:
+            return self.layer
+        return infer_layer(self.type).value
+
+    def resolved_required_deps(self) -> list[str]:
+        """Return required deps, auto-inferring from type if empty."""
+        if self.required_dependencies:
+            return self.required_dependencies
+        return infer_required_deps(self.type)
+
 class Edge(BaseModel):
     """A directed dependency between two Nodes.
     
@@ -208,6 +322,24 @@ class Edge(BaseModel):
     last_validated_at: Optional[datetime] = Field(
         default=None,
         description="Last time this dependency was validated.",
+    )
+
+    # ── UIM semantic edge fields ──────────────────────────────────────
+    interaction_type: str = Field(
+        default="runtime_call",
+        description="Semantic interaction: runtime_call, async_event, containment, control_dependency, data_dependency, fallback.",
+    )
+    primary: bool = Field(
+        default=True,
+        description="Whether this is the primary dependency path (vs fallback/secondary).",
+    )
+    inferred: bool = Field(
+        default=False,
+        description="Whether this edge was auto-inferred rather than explicitly declared.",
+    )
+    direction: str = Field(
+        default="downstream",
+        description="Semantic direction: downstream, upstream, lateral.",
     )
 
 

@@ -27,10 +27,13 @@ export default function InfraNode({
     expandedNodeId,
     isDragging = false,
     physicsHovered = false,
+    isGhost = false,
+    onToggleGhost,
+    interactionMode = 'select',
 }) {
     const [localHovered, setHovered] = useState(false);
     const { isSimulationMode } = useAnalysis();
-    
+
     // Logic for hover state
     const hovered = physicsHovered || localHovered;
     const { node } = nodeLayout;
@@ -52,11 +55,13 @@ export default function InfraNode({
             layout={nodeLayout} meta={meta} lp={lp}
             hovered={hovered} setHovered={setHovered}
             dimmed={dimmed} focused={focused} theme={theme}
-            onNodeClick={onNodeClick} 
-            onNodeMouseDown={onNodeMouseDown} 
+            onNodeClick={onNodeClick}
+            onNodeMouseDown={onNodeMouseDown}
             isExpanded={isExpanded}
             onGodModeSelect={onGodModeSelect} isDragging={isDragging}
             isRemovalCandidate={isRemovalCandidate}
+            isGhost={isGhost}
+            interactionMode={interactionMode}
         />
     );
 }
@@ -157,7 +162,7 @@ function RegionNode({ layout, meta, dimmed, focused, theme, onNodeMouseDown, isD
 
 function CardNode({
     layout, meta, lp, hovered, setHovered,
-    dimmed, focused, theme, onNodeClick, onNodeMouseDown, onGodModeSelect, isExpanded, isDragging, isRemovalCandidate,
+    dimmed, focused, theme, onNodeClick, onNodeMouseDown, onGodModeSelect, isExpanded, isDragging, isRemovalCandidate, isGhost, interactionMode,
 }) {
     const { x, y, w, h, node } = layout;
     const events = node.history || [];
@@ -171,9 +176,9 @@ function CardNode({
             onMouseDown={(e) => onNodeMouseDown && onNodeMouseDown(node.id, e)}
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{
-                opacity: dimmed ? 0.12 : (isPlanned ? undefined : 1), // Let CSS handle planned opacity
+                opacity: isGhost ? 0.4 : (dimmed ? 0.12 : (isPlanned ? undefined : 1)),
                 scale: 1,
-                filter: dimmed ? 'saturate(0.2) brightness(0.8)' : 'brightness(1)',
+                filter: isGhost ? 'grayscale(100%) brightness(0.9)' : (dimmed ? 'saturate(0.2) brightness(0.8)' : 'brightness(1)'),
             }}
             transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
             onMouseEnter={() => setHovered(true)}
@@ -194,7 +199,7 @@ function CardNode({
                 style={{
                     pointerEvents: 'none', // Keep un-draggable
                     height: h,
-                    background: isRemovalCandidate 
+                    background: isRemovalCandidate
                         ? 'rgba(255, 59, 48, 0.05)'
                         : isPlanned ? 'rgba(0,122,255,0.05)' : (isDark ? 'rgba(44,44,46,0.75)' : 'rgba(255,255,255,0.88)'),
                     backdropFilter: 'blur(20px) saturate(1.8)',
@@ -223,15 +228,15 @@ function CardNode({
             >
                 {/* ── Node Analysis Badges ────────────────────────────────── */}
                 <div className="absolute top-[-5px] right-[10px] flex gap-1 pointer-events-none">
-                     {node.attributes?.risk > 50 && (
-                         <div className="w-1.5 h-1.5 rounded-full bg-[#FF3B30] glow-red" title="High Risk" />
-                     )}
-                     {node.attributes?.monthly_cost > 10 && (
-                         <div className="w-1.5 h-1.5 rounded-full bg-[#34C759] glow-green" title="High Cost" />
-                     )}
-                     {(node.metrics?.current_load || 0) > 0.7 && (
-                         <div className="w-1.5 h-1.5 rounded-full bg-[#007AFF] glow-blue" title="High Load" />
-                     )}
+                    {node.attributes?.risk > 50 && (
+                        <div className="w-1.5 h-1.5 rounded-full bg-[#FF3B30] glow-red" title="High Risk" />
+                    )}
+                    {node.attributes?.monthly_cost > 10 && (
+                        <div className="w-1.5 h-1.5 rounded-full bg-[#34C759] glow-green" title="High Cost" />
+                    )}
+                    {(node.metrics?.current_load || 0) > 0.7 && (
+                        <div className="w-1.5 h-1.5 rounded-full bg-[#007AFF] glow-blue" title="High Load" />
+                    )}
                 </div>
 
                 {/* Icon badge */}
@@ -245,22 +250,22 @@ function CardNode({
                 {/* Text */}
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                        <div className="text-[12px] font-semibold truncate leading-tight" style={{ color: isDark ? 'rgba(255,255,255,0.9)' : '#1d1d1f', letterSpacing: '-0.01em' }}>
+                        <div className="text-[12px] font-semibold truncate leading-tight" style={{ color: isDark ? 'rgba(255,255,255,0.9)' : '#1d1d1f', letterSpacing: '-0.01em', textDecoration: isGhost ? 'line-through' : 'none' }}>
                             {node.label}
                         </div>
-                        {(isPlanned || isRemovalCandidate) && (
-                            <span className="text-[8px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded-sm" 
-                                  style={{ 
-                                      background: isRemovalCandidate ? 'rgba(255,59,48,0.15)' : 'rgba(0,122,255,0.15)', 
-                                      color: isRemovalCandidate ? '#FF3B30' : '#007AFF' 
-                                  }}>
-                                {isRemovalCandidate ? 'Removed' : 'Planned'}
+                        {(isPlanned || isRemovalCandidate || isGhost) && (
+                            <span className="text-[8px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded-sm"
+                                style={{
+                                    background: isGhost ? (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)') : (isRemovalCandidate ? 'rgba(255,59,48,0.15)' : 'rgba(0,122,255,0.15)'),
+                                    color: isGhost ? (isDark ? '#aeaeb2' : '#86868b') : (isRemovalCandidate ? '#FF3B30' : '#007AFF')
+                                }}>
+                                {isGhost ? 'Removed' : isRemovalCandidate ? 'Pending Deletion' : 'Planned'}
                             </span>
                         )}
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[9px] font-medium" style={{ color: isDark ? '#aeaeb2' : '#86868b' }}>{meta.label}</span>
-                        {!isPlanned && !isRemovalCandidate && (
+                        <span className="text-[9px] font-medium" style={{ color: isDark ? '#aeaeb2' : '#86868b', textDecoration: isGhost ? 'line-through' : 'none' }}>{meta.label}</span>
+                        {!isPlanned && !isRemovalCandidate && !isGhost && (
                             <>
                                 <span className="text-[9px]" style={{ color: isDark ? '#636366' : '#d1d1d6' }}>·</span>
                                 <span className="text-[10px] font-medium" style={{ color: lp.color }}>

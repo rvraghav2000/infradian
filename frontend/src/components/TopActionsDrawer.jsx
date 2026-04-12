@@ -20,15 +20,19 @@ export default function TopActionsDrawer({ theme = 'light', onNodeSelect }) {
     { id: 'delete', label: 'Safe Deletes', icon: '🟢', color: '#34C759' },
     { id: 'optimize', label: 'Waste', icon: '🟡', color: '#FF9500' },
     { id: 'investigate', label: 'Unknowns', icon: '🔎', color: '#007AFF' },
+    { id: 'planned', label: 'Planned', icon: '📐', color: '#AF52DE' },
   ];
 
   const getItems = () => {
     if (!topActions) return [];
-    if (activeSection === 'fix') return topActions.topRisks || [];
-    if (activeSection === 'delete') return topActions.safeDeletionCandidates || [];
-    if (activeSection === 'optimize') return topActions.wasteCandidates || [];
-    if (activeSection === 'investigate') return topActions.investigationCandidates || [];
-    return [];
+    switch (activeSection) {
+      case 'fix': return topActions.topRisks || [];
+      case 'delete': return topActions.safeDeletionCandidates || [];
+      case 'optimize': return topActions.wasteCandidates || [];
+      case 'investigate': return topActions.investigationCandidates || [];
+      case 'planned': return topActions.plannedInsights || [];
+      default: return [];
+    }
   };
 
   const items = getItems();
