@@ -17,6 +17,10 @@ from fastapi import FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import traceback
+import logging
+
+logger = logging.getLogger(__name__)
+
 from .models import InfraGraph, Node, Edge
 from .database import db
 from .analysis.api import router as analysis_router
@@ -208,9 +212,14 @@ async def get_nodes(account_id: Optional[str] = None) -> Dict[str, Any]:
 
         return {"nodes": nodes, "edges": edges}
     except Exception as e:
-        print(f"!!! CRITICAL ERROR IN get_nodes: {str(e)}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve graph data: {str(e)}")
+        print(f"!!! NEO4J UNAVAILABLE: falling back to sample payload. Error: {str(e)}")
+        try:
+            raw = SAMPLE_PATH.read_text(encoding="utf-8")
+            payload = json.loads(raw)
+            return payload
+        except Exception as fallback_error:
+            print(f"!!! FALLBACK FAILED: {str(fallback_error)}")
+            raise HTTPException(status_code=500, detail=f"Graph retrieval failed even with fallback: {str(e)}")
 
 
 @app.post("/api/v1/graph", status_code=status.HTTP_201_CREATED)
