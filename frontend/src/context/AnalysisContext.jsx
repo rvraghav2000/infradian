@@ -22,7 +22,7 @@ export function AnalysisProvider({ children }) {
   const [cloudFilter, setCloudFilter] = useState({ aws: true, azure: true, gcp: true });
 
   // ── Account filter ───────────────────────────────────────────
-  const [activeAccounts, setActiveAccounts] = useState(new Set());
+  const [activeAccounts, setActiveAccounts] = useState(null);
 
   // ── Interaction mode ─────────────────────────────────────────
   const [interactionMode, setInteractionMode] = useState('select'); // 'select' | 'connect' | 'annotate'

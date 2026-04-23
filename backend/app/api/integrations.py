@@ -551,7 +551,9 @@ async def list_connections():
     cypher = "MATCH (c:CloudIntegration) RETURN properties(c) AS props ORDER BY c.created_at DESC"
     rows = db.query(cypher)
     if rows is None:
-        raise HTTPException(status_code=500, detail="Neo4j unavailable")
+        # Gracefully return empty list when Neo4j is offline (fallback mode)
+        logger.warning("Neo4j unavailable — returning empty connections list")
+        return []
 
     connections = []
     for row in rows:

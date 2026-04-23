@@ -16,6 +16,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Separator } from "@/components/ui/separator";
 import { 
   Search, 
   Home, 
@@ -46,6 +47,14 @@ export default function App() {
 
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
   const [theme, setTheme] = useState('light');
+
+  // Sync Tailwind dark mode class to HTML root
+  useEffect(() => {
+    const root = window.document.documentElement;
+    root.classList.remove('light', 'dark');
+    root.classList.add(theme);
+  }, [theme]);
+
   const { 
     isSimulationMode, setIsSimulationMode, 
     blastRadius, clearAnalysis,
@@ -279,11 +288,11 @@ export default function App() {
   return (
     <TooltipProvider>
       <div className={cn(
-        "relative w-screen h-screen overflow-hidden transition-colors duration-500 font-sans",
+        "flex flex-col w-screen h-screen overflow-hidden transition-colors duration-500 font-sans",
         theme === 'dark' ? "bg-background text-foreground" : "bg-[#f5f5f7] text-[#1d1d1f]"
       )}>
         {/* ── Top Header / Toolbar ─────────────────────────────────────── */}
-        <div className="absolute top-0 left-0 right-0 h-14 bg-background/80 backdrop-blur-md border-b border-border z-40 flex items-center justify-between px-6">
+        <div className="shrink-0 h-14 bg-background/80 backdrop-blur-md border-b border-border z-40 flex items-center justify-between px-6">
           <div className="flex items-center gap-3 select-none">
             <h1 className="text-base font-bold tracking-tight text-foreground">
               Infradian
@@ -358,22 +367,8 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex-1 flex overflow-hidden relative mt-14">
-          {/* Planning Mode Sidebar - Fixed spacing logic */}
-          <AnimatePresence>
-            {isSimulationMode && (
-              <motion.div
-                initial={{ width: 0, opacity: 0 }}
-                animate={{ width: 280, opacity: 1 }}
-                exit={{ width: 0, opacity: 0 }}
-                className="shrink-0 z-[45]"
-              >
-                <PlanningPanel theme={theme} />
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          <div className="flex-1 relative min-w-0">
+        <div className="flex-1 flex overflow-hidden relative min-h-0 relative">
+          <div className="flex-1 relative min-w-0 w-full h-full">
             <CytoscapeCanvas 
               graphData={{
                 nodes: [...filteredNodes, ...draftData.nodes],
@@ -406,9 +401,9 @@ export default function App() {
                       opacity: blastRadius?.impactedNodes 
                                && !blastRadius.impactedNodes.some(n => String(n.id) === String(node.id)) 
                                && String(node.id) !== String(blastRadius.nodeId) ? 0.25 : 1,
-                      ...(isRegion ? {
-                        width: 'var(--region-w, 200px)',
-                        height: 'var(--region-h, 100px)',
+                      ...(!isRegion ? {
+                        width: '220px',
+                        height: '60px',
                       } : {})
                     }}
                   >
@@ -433,15 +428,31 @@ export default function App() {
             })}
             </div>
           </div>
-          {/* Analysis Panel (Right Sidebar) */}
+
+          {/* Planning Mode Sidebar - Absolute Overlay */}
+          <AnimatePresence>
+            {isSimulationMode && (
+              <motion.div
+                initial={{ transform: 'translateX(-100%)', opacity: 0 }}
+                animate={{ transform: 'translateX(0%)', opacity: 1 }}
+                exit={{ transform: 'translateX(-100%)', opacity: 0 }}
+                transition={{ duration: 0.3, ease: 'easeOut' }}
+                className="absolute top-0 left-0 h-full z-[45] shadow-2xl"
+              >
+                <PlanningPanel theme={theme} />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Analysis Panel (Right Sidebar) - Absolute Overlay */}
           <AnimatePresence>
             {focusedNodeId && isAnalysisOpen && (
               <motion.div
-                initial={{ width: 0, opacity: 0 }}
-                animate={{ width: 380, opacity: 1 }}
-                exit={{ width: 0, opacity: 0 }}
-                transition={{ duration: 0.25, ease: 'easeOut' }}
-                className="shrink-0 z-[45] border-l"
+                initial={{ transform: 'translateX(100%)', opacity: 0 }}
+                animate={{ transform: 'translateX(0%)', opacity: 1 }}
+                exit={{ transform: 'translateX(100%)', opacity: 0 }}
+                transition={{ duration: 0.3, ease: 'easeOut' }}
+                className="absolute top-0 right-0 h-full z-[45] border-l shadow-2xl"
               >
                 <div className="w-[380px] h-full flex flex-col bg-background/95">
                   <AnalysisPanel 
@@ -467,7 +478,17 @@ export default function App() {
           focusedNodeId={focusedNodeId}
           clearFocus={clearFocus}
         />
-        
+
+        {/* ── Modals & Overlays ───────────────────────────────────── */}
+        <CommandPalette
+          nodes={[...filteredNodes, ...draftData.nodes]}
+          edges={[...filteredEdges, ...draftData.edges]}
+          isOpen={cmdKOpen}
+          onClose={() => setCmdKOpen(false)}
+          onSelect={handleGodModeSelect}
+          theme={theme}
+        />
+
         <CloudSettings
           isOpen={isCloudSettingsOpen}
           onClose={() => setIsCloudSettingsOpen(false)}

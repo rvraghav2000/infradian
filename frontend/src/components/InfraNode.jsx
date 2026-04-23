@@ -159,7 +159,7 @@ function CardNode({
                 transform: `translate3d(${x}px, ${y}px, 0)`,
                 width: w,
                 zIndex: hovered ? 150 : 10,
-                pointerEvents: 'auto',
+                pointerEvents: 'none',
                 transition: isDragging ? 'none' : 'transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.15)',
             }}
         >

@@ -305,7 +305,7 @@ export default function CloudSettings({ isOpen, onClose, theme = 'light' }) {
           </div>
         </SheetHeader>
 
-          <ScrollArea className="flex-1 px-6">
+          <ScrollArea className="flex-1 min-h-0 px-6">
             <div className="py-6 space-y-6">
               {/* Add New Connection Trigger */}
               {!showAddForm && (

@@ -265,15 +265,6 @@ const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onCanvasClick,
 
             cy.on('render pan zoom drag', () => {
               const zoom = cy.zoom();
-
-              if (zoomTextRef.current) {
-                const pct = Math.round(zoom * 100);
-                const pctStr = `${pct}%`;
-                if (zoomTextRef.current.innerText !== pctStr) {
-                  zoomTextRef.current.innerText = pctStr;
-                }
-              }
-
               const nodeModelW = CARD_W / zoom;
               const nodeModelH = CARD_H / zoom;
 
@@ -285,11 +276,14 @@ const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onCanvasClick,
                 const el = document.getElementById(`infranode-${node.id()}`);
                 if (el) {
                   const pos = node.renderedPosition();
-                  const containerRect = cy.container().getBoundingClientRect();
-                  const globalX = containerRect.left + pos.x;
-                  const globalY = containerRect.top + pos.y;
-                  // Apply translation
-                  el.style.transform = `translate3d(${globalX}px, ${globalY}px, 0) translate(-50%, -50%)`;
+                  // Apply translation relative to the parent container
+                  el.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0) translate(-50%, -50%)`;
+                  
+                  if (node.isParent()) {
+                    const bb = node.renderedBoundingBox({ includeNodes: true, includeEdges: false, includeLabels: false });
+                    el.style.width = `${bb.w}px`;
+                    el.style.height = `${bb.h}px`;
+                  }
                 }
               });
             });

@@ -92,7 +92,7 @@ export default function PlanningPanel({ theme = 'light' }) {
                     )}
 
                     {/* ── Scrollable Content ── */}
-                    <ScrollArea className="flex-1">
+                    <ScrollArea className="flex-1 min-h-0">
                         <div className={cn(
                             "p-2 space-y-4 pb-12",
                             collapsed ? "items-center" : ""
