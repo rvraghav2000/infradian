@@ -1,0 +1,16 @@
+# Apply once:  kubectl apply -f gitops/bootstrap/root-app.yaml
+# After that, every change under gitops/apps is deployed by ArgoCD ("app of apps").
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/rvraghav2000/infradian.git
+    targetRevision: main
+    path: gitops/apps
+  destination: { server: https://kubernetes.default.svc, namespace: argocd }
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }

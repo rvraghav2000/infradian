@@ -1,0 +1,11 @@
+# Environment values for the inventory-api chart. CI rewrites image.repository/tag
+# on every successful main build; ArgoCD syncs the change to the cluster.
+replicaCount: 2
+
+image:
+  repository: inventory-api
+  tag: dev
+  pullPolicy: IfNotPresent
+
+serviceMonitor:
+  enabled: true

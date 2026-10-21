@@ -1,0 +1,75 @@
+# SLOs for inventory-api
+#   SLO-1 Availability: 99.5% of requests succeed (non-5xx) over 30 days  → error budget 0.5%
+#   SLO-2 Latency:      95% of requests complete in < 300ms over 30 days   (p95 < 300ms)
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: inventory-api-slo
+  namespace: monitoring
+spec:
+  groups:
+    - name: inventory-api.sli
+      interval: 30s
+      rules:
+        # error ratio over each window
+        - record: sli:http_error_ratio:rate5m
+          expr: |
+            sum(rate(http_requests_total{job="inventory-api",code=~"5.."}[5m]))
+            / sum(rate(http_requests_total{job="inventory-api"}[5m]))
+        - record: sli:http_error_ratio:rate30m
+          expr: |
+            sum(rate(http_requests_total{job="inventory-api",code=~"5.."}[30m]))
+            / sum(rate(http_requests_total{job="inventory-api"}[30m]))
+        - record: sli:http_error_ratio:rate1h
+          expr: |
+            sum(rate(http_requests_total{job="inventory-api",code=~"5.."}[1h]))
+            / sum(rate(http_requests_total{job="inventory-api"}[1h]))
+        - record: sli:http_error_ratio:rate6h
+          expr: |
+            sum(rate(http_requests_total{job="inventory-api",code=~"5.."}[6h]))
+            / sum(rate(http_requests_total{job="inventory-api"}[6h]))
+        - record: sli:http_error_ratio:rate30d
+          expr: |
+            sum(rate(http_requests_total{job="inventory-api",code=~"5.."}[30d]))
+            / sum(rate(http_requests_total{job="inventory-api"}[30d]))
+        # remaining error budget (1 = untouched, 0 = spent)
+        - record: slo:availability_error_budget_remaining:ratio
+          expr: 1 - (sli:http_error_ratio:rate30d / 0.005)
+        # latency SLI
+        - record: sli:http_latency_p95:5m
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(http_request_duration_seconds_bucket{job="inventory-api"}[5m])))
+        - record: sli:http_fast_ratio:rate30m   # share of requests under 250ms (nearest bucket below the 300ms SLO)
+          expr: |
+            sum(rate(http_request_duration_seconds_bucket{job="inventory-api",le="0.25"}[30m]))
+            / sum(rate(http_request_duration_seconds_count{job="inventory-api"}[30m]))
+    - name: inventory-api.alerts
+      rules:
+        # Multi-window, multi-burn-rate (Google SRE workbook): budget = 0.005
+        - alert: InventoryAvailabilityBurnFast
+          expr: sli:http_error_ratio:rate1h > (14.4 * 0.005) and sli:http_error_ratio:rate5m > (14.4 * 0.005)
+          for: 2m
+          labels: { severity: page, slo: availability }
+          annotations:
+            summary: "Burning 99.5% availability budget at >14.4x (budget gone in ~2 days)"
+            runbook: docs/runbooks/inventory-api.md#availability
+        - alert: InventoryAvailabilityBurnSlow
+          expr: sli:http_error_ratio:rate6h > (6 * 0.005) and sli:http_error_ratio:rate30m > (6 * 0.005)
+          for: 15m
+          labels: { severity: ticket, slo: availability }
+          annotations:
+            summary: "Burning availability budget at >6x"
+            runbook: docs/runbooks/inventory-api.md#availability
+        - alert: InventoryLatencyP95High
+          expr: sli:http_latency_p95:5m > 0.3
+          for: 10m
+          labels: { severity: page, slo: latency }
+          annotations:
+            summary: "p95 latency above the 300ms SLO for 10m"
+            runbook: docs/runbooks/inventory-api.md#latency
+        - alert: InventoryDown
+          expr: up{job="inventory-api"} == 0 or absent(up{job="inventory-api"})
+          for: 2m
+          labels: { severity: page, slo: availability }
+          annotations: { summary: "inventory-api has no healthy scrape targets" }

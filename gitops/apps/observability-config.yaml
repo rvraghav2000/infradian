@@ -1,0 +1,17 @@
+# SLO recording rules, alerts and the Grafana dashboard (plain manifests).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: observability-config
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/rvraghav2000/infradian.git
+    targetRevision: main
+    path: observability
+    directory: { recurse: true }
+  destination: { server: https://kubernetes.default.svc, namespace: monitoring }
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [ServerSideApply=true]

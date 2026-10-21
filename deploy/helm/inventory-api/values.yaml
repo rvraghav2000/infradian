@@ -1,0 +1,35 @@
+replicaCount: 2
+
+image:
+  repository: inventory-api          # ECR URL in real envs, set by GitOps values
+  tag: dev
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+  nodePort: null                      # set (e.g. 30080) for kind
+
+resources:
+  requests: { cpu: 50m, memory: 64Mi }
+  limits: { cpu: 500m, memory: 256Mi }
+
+dbMaxOpenConns: 10
+
+postgres:
+  enabled: true
+  image: postgres:16-alpine
+  user: inventory
+  database: inventory
+  password: change-me                 # dev only; use an external secret in prod
+  storage: 1Gi
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+pdb:
+  enabled: true
+
+serviceMonitor:
+  enabled: false                      # enable once kube-prometheus-stack CRDs exist
+  interval: 15s

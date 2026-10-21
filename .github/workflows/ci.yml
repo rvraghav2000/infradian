@@ -1,0 +1,81 @@
+name: inventory-api CI
+
+on:
+  push:
+    branches: [main]
+    paths: ["services/inventory-api/**", "deploy/helm/**", ".github/workflows/ci.yml"]
+  pull_request:
+    paths: ["services/inventory-api/**", "deploy/helm/**"]
+
+permissions:
+  id-token: write   # OIDC to AWS — no long-lived keys
+  contents: write   # commit the image-tag bump for ArgoCD
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: infradian/inventory-api
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: services/inventory-api } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: services/inventory-api/go.mod, cache-dependency-path: services/inventory-api/go.sum }
+      - run: go vet ./...
+      - run: go test -race -cover ./...
+      - name: Helm lint
+        run: |
+          curl -fsSL https://get.helm.sh/helm-v3.16.2-linux-amd64.tar.gz | tar xz
+          ./linux-amd64/helm lint ../../deploy/helm/inventory-api
+
+  build-scan-push:
+    needs: test
+    runs-on: ubuntu-latest
+    env: { IMAGE_TAG: "${{ github.sha }}" }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t inventory-api:$IMAGE_TAG services/inventory-api
+
+      - name: Trivy scan (fail on HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: inventory-api:${{ env.IMAGE_TAG }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      # Everything below only runs on main — PRs stop after the scan.
+      - name: Configure AWS credentials
+        if: github.ref == 'refs/heads/main'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        if: github.ref == 'refs/heads/main'
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Push to ECR
+        if: github.ref == 'refs/heads/main'
+        run: |
+          IMAGE=${{ steps.ecr.outputs.registry }}/$ECR_REPOSITORY
+          docker tag inventory-api:$IMAGE_TAG $IMAGE:$IMAGE_TAG
+          docker push $IMAGE:$IMAGE_TAG
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+
+      # Deploy-by-commit: bump the tag in the GitOps values; ArgoCD does the rest.
+      - name: Bump image tag in GitOps config
+        if: github.ref == 'refs/heads/main'
+        run: |
+          sed -i "s|^  repository:.*|  repository: $IMAGE|; s|^  tag:.*|  tag: $IMAGE_TAG|" gitops/values/inventory-api.yaml
+          git config user.name  "infradian-ci"
+          git config user.email "ci@infradian.local"
+          git add gitops/values/inventory-api.yaml
+          git commit -m "deploy: inventory-api $IMAGE_TAG [skip ci]"
+          git push

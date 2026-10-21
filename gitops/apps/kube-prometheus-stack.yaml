@@ -1,0 +1,50 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 66.2.1
+    helm:
+      values: |
+        grafana:
+          adminPassword: admin   # dev only
+          service: { type: NodePort, nodePort: 30030 }
+          additionalDataSources:
+            - name: Loki
+              type: loki
+              url: http://loki:3100
+              access: proxy
+          sidecar:
+            dashboards: { enabled: true, label: grafana_dashboard, searchNamespace: ALL }
+        prometheus:
+          service: { type: NodePort, nodePort: 30090 }
+          prometheusSpec:
+            # pick up our ServiceMonitors/PrometheusRules regardless of Helm release label
+            serviceMonitorSelectorNilUsesHelmValues: false
+            ruleSelectorNilUsesHelmValues: false
+        alertmanager:
+          config:
+            route:
+              receiver: default
+              group_by: [alertname, slo]
+              routes:
+                - matchers: [severity="page"]
+                  receiver: oncall
+                - matchers: [severity="ticket"]
+                  receiver: default
+            receivers:
+              - name: default
+              - name: oncall
+                # Swap for a real receiver (Slack/PagerDuty). Webhook shown as a stub.
+                webhook_configs:
+                  - url: http://alert-sink.monitoring.svc:8080/alerts
+                    send_resolved: true
+  destination: { server: https://kubernetes.default.svc, namespace: monitoring }
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]

@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Run any platform CLI inside the toolbox container:   scripts/tb kubectl get pods -A
+#                                                      scripts/tb helm lint deploy/helm/inventory-api
+#                                                      scripts/tb trivy image inventory-api:dev
+# Needs only Docker on the host. Joins the `kind` network so kubectl reaches the cluster.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+docker image inspect infradian-toolbox >/dev/null 2>&1 || docker build -q -t infradian-toolbox tools/toolbox >/dev/null
+NET=(); docker network inspect kind >/dev/null 2>&1 && NET=(--network kind)
+exec docker run --rm -i $([ -t 0 ] && echo -t) ${NET[@]+"${NET[@]}"} \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v "$PWD":/work -v infradian-kube:/root/.kube \
+  -e KUBECONFIG=/root/.kube/config -e DOCKER_HOST=unix:///var/run/docker.sock \
+  infradian-toolbox "$@"
