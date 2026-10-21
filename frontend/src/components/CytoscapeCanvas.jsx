@@ -77,9 +77,11 @@ const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onCanvasClick,
     {
       selector: 'edge',
       style: {
-        'width': 1.5,
-        'line-color': '#007AFF', // Vibrant Blue
-        'target-arrow-color': '#007AFF',
+        'width': 1.75,
+        'line-color': '#4f8ff7',
+        'line-opacity': 0.8,
+        'target-arrow-color': '#4f8ff7',
+        'arrow-scale': 1.1,
         'target-arrow-shape': 'triangle',
         'curve-style': 'bezier', // Smooth, direct curves that don't jump wildly during node drags
         'line-style': 'dashed',
@@ -90,7 +92,8 @@ const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onCanvasClick,
         'color': '#86868b',
         'text-background-color': '#ffffff',
         'text-background-opacity': 0.92,
-        'text-background-padding': '4px',
+        'text-background-padding': '5px',
+        'font-weight': 500,
         'text-background-shape': 'roundrectangle',
         'text-border-color': 'rgba(0,0,0,0.06)',
         'text-border-width': 0.5,
@@ -240,8 +243,8 @@ const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onCanvasClick,
 
 
       {/* Zoom indicator restored from IsometricCanvas */}
-      <div className="absolute top-7 right-8 z-[999] select-none">
-        <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-xl"
+      <div className="absolute top-6 right-8 z-[999] select-none">
+        <div className={`flex items-center gap-1.5 px-2 py-1.5 rounded-xl chrome-pill ${theme === 'dark' ? 'dark' : ''}`}
           style={{
             background: theme === 'dark' ? 'rgba(30,30,32,0.85)' : 'rgba(255,255,255,0.85)',
             border: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
@@ -416,7 +419,7 @@ const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onCanvasClick,
           // Dynamic updates: if layoutTrigger increments, run layout
           if (cy.scratch('last_layout_trigger') !== layoutTrigger) {
             cy.scratch('last_layout_trigger', layoutTrigger);
-            cy.layout({
+            const layout = cy.layout({
               name: 'dagre',
               rankDir: 'TB',
               spacingFactor: 2.0,
@@ -426,12 +429,17 @@ const CytoscapeCanvas = ({ graphData, layoutTrigger, onNodeClick, onCanvasClick,
               animationDuration: 600,
               animationEasing: 'ease-in-out-cubic',
               fit: false
-            }).run();
+            });
+            // Cards keep a constant pixel size, so centre the graph instead of zooming to fit.
+            layout.on('layoutstop', () => cy.animate({ center: { eles: cy.nodes() } }, { duration: 450, easing: 'ease-in-out-cubic' }));
+            layout.run();
           }
 
         }}
         layout={layoutConfig}
         zoomingEnabled={true}
+        maxZoom={1.25}
+        minZoom={0.15}
         userZoomingEnabled={false} // Disable Cytoscape default scroll wheel zoom
       />
     </div>

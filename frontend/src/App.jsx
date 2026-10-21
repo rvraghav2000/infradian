@@ -5,7 +5,7 @@ import CommandPalette from './components/CommandPalette';
 import HistoryStack from './components/HistoryStack';
 import InfraNode from './components/InfraNode';
 import PlanningPanel from './components/PlanningPanel';
-import { NODE_CATEGORIES } from './layout';
+import { NODE_CATEGORIES, providerOfType } from './layout';
 
 
 const PALETTE_ITEMS = [
@@ -21,6 +21,7 @@ import CloudSettings from './components/CloudSettings';
 import ReadinessBadge from './components/ReadinessBadge';
 import WorkspaceManager from './components/WorkspaceManager';
 import DiffSummary from './components/DiffSummary';
+import IacStudio from './components/iac/IacStudio';
 
 export default function App() {
   const [rawData, setRawData] = useState({ nodes: [], edges: [] });
@@ -52,16 +53,12 @@ export default function App() {
   const [isAnalysisOpen, setIsAnalysisOpen] = useState(false);
   const [isCloudSettingsOpen, setIsCloudSettingsOpen] = useState(false);
   const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(false);
+  const [isStudioOpen, setIsStudioOpen] = useState(false);
   const [accounts, setAccounts] = useState([]);
   const initialLayoutPerformed = useRef(false);
 
   // Derive provider from node type prefix
-  const getNodeProvider = (type) => {
-    if (!type) return 'aws';
-    if (type.startsWith('azure_')) return 'azure';
-    if (type.startsWith('gcp_')) return 'gcp';
-    return 'aws';
-  };
+  const getNodeProvider = providerOfType;
 
   /* ── Filter Logic ──────────────────────────────────────────────── */
   const filteredNodes = useMemo(() => {
@@ -70,7 +67,7 @@ export default function App() {
     // Filter by cloud provider from Context
     result = result.filter(n => {
       const p = getNodeProvider(n.type);
-      return cloudFilter[p];
+      return cloudFilter[p] !== false;
     });
 
     // Filter by explicit Account selection
@@ -244,9 +241,11 @@ export default function App() {
 
   if (isLoading && (!rawData || rawData.nodes.length === 0)) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-sm animate-pulse" style={{ color: '#007AFF' }}>
-          Loading infrastructure graph…
+      <div className="flex flex-col items-center justify-center h-screen gap-4 w-full">
+        <div className="app-backdrop" />
+        <div className="brand-mark animate-pulse" style={{ width: 52, height: 52, fontSize: 26, borderRadius: 16, zIndex: 1 }}>∞</div>
+        <div className="text-[13px] font-medium" style={{ color: '#6e6e73', zIndex: 1, letterSpacing: '0.01em' }}>
+          Mapping your infrastructure…
         </div>
       </div>
     );
@@ -264,7 +263,7 @@ export default function App() {
     >
       {/* ── Global Actions (Top Right) ───────────────────────────────── */}
       <div 
-        className="fixed top-7 right-44 flex items-center gap-1.5 px-2 py-1.5 rounded-xl"
+        className={`fixed top-6 right-44 flex items-center gap-1.5 px-2 py-1.5 rounded-xl chrome-pill ${theme === 'dark' ? 'dark' : ''}`}
         style={{
           zIndex: 60,
           background: theme === 'dark' ? 'rgba(30,30,32,0.85)' : 'rgba(255,255,255,0.85)',
@@ -434,6 +433,19 @@ export default function App() {
           <div className="w-px h-4 mx-1" style={{ background: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
 
           <button
+            onClick={(e) => { e.stopPropagation(); setIsStudioOpen(o => !o); }}
+            className="flex items-center gap-2 px-3 h-8 rounded-md cursor-pointer border-0 text-xs font-semibold"
+            style={{
+              background: isStudioOpen ? 'rgba(0,122,255,0.2)' : (theme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)'),
+              color: isStudioOpen ? '#007AFF' : (theme === 'dark' ? '#aeaeb2' : '#86868b'),
+              transition: 'background 0.2s',
+            }}
+            title="IaC Studio — Terraform/OpenTofu code, governance, deploy, team"
+          >
+            <span>&lt;/&gt; Code</span>
+          </button>
+
+          <button
             onClick={(e) => { e.stopPropagation(); setIsCloudSettingsOpen(true); }}
             className="flex items-center gap-2 px-3 h-8 rounded-md cursor-pointer border-0 text-xs font-semibold"
             style={{
@@ -453,19 +465,19 @@ export default function App() {
       </div>
 
       {/* HUD & Legend overlays restored from IsometricCanvas */}
-      <div className="fixed top-7 left-9 select-none pointer-events-none" style={{ zIndex: 60 }}>
-          <h1 className="text-[22px] font-semibold" style={{ color: theme === 'dark' ? '#fff' : '#1d1d1f', letterSpacing: '-0.02em' }}>
-              Infradian
-          </h1>
-          <p className="text-[11px] mt-0.5" style={{ color: theme === 'dark' ? '#aeaeb2' : '#86868b', fontWeight: 500 }}>
-              Infrastructure Map
-          </p>
-          <p className="text-[10px] mt-1" style={{ color: theme === 'dark' ? '#636366' : '#aeaeb2' }}>
-              ⌘K Search · Click to select · Drag to organize · Scroll to zoom
-          </p>
+      <div className="fixed top-6 left-8 select-none pointer-events-none hidden min-[900px]:flex items-center gap-3 fade-up" style={{ zIndex: 60 }}>
+          <div className="brand-mark">∞</div>
+          <div className="hidden min-[1280px]:block">
+              <h1 className={`text-[20px] font-semibold leading-none brand-word ${theme === 'dark' ? 'dark' : ''}`} style={{ letterSpacing: '-0.025em' }}>
+                  Infradian
+              </h1>
+              <p className="text-[11px] mt-1" style={{ color: theme === 'dark' ? '#9a9aa6' : '#6e6e73', fontWeight: 500 }}>
+                  Infrastructure studio
+              </p>
+          </div>
       </div>
 
-      <div className="fixed bottom-7 right-9 z-50 select-none flex gap-5 text-[10px]" style={{ color: '#86868b', fontWeight: 500 }}>
+      <div className={`fixed bottom-6 right-8 z-50 select-none flex gap-4 text-[10px] legend-pill ${theme === 'dark' ? 'dark' : ''}`} style={{ color: theme === 'dark' ? '#b0b0ba' : '#6e6e73', fontWeight: 600, letterSpacing: '0.02em' }}>
           <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full" style={{ background: '#34C759' }} /> Live
           </span>
@@ -477,21 +489,8 @@ export default function App() {
           </span>
       </div>
 
-      {/* Dynamic Grid Background */}
-      <div 
-          style={{
-              position: 'fixed',
-              inset: 0,
-              backgroundImage: `
-                  linear-gradient(${theme === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)'} 1px, transparent 1px),
-                  linear-gradient(90deg, ${theme === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)'} 1px, transparent 1px)
-              `,
-              backgroundSize: '40px 40px',
-              pointerEvents: 'none',
-              zIndex: 0,
-              transition: 'background-image 0.5s ease',
-          }} 
-      />
+      {/* Ambient backdrop: aurora glow + dot grid */}
+      <div className={`app-backdrop ${theme === 'dark' ? 'dark' : ''}`} />
 
       {/* ── Top Chrome Mesh ─────────────────────────────────────────────
           Frosted glass gradient that feathers from the top down.
@@ -667,6 +666,16 @@ export default function App() {
         <DiffSummary theme={theme} rawData={{ nodes: filteredNodes, edges: filteredEdges }} />
       </AnimatePresence>
       
+      <IacStudio
+        open={isStudioOpen}
+        onClose={() => setIsStudioOpen(false)}
+        theme={theme}
+        liveNodes={filteredNodes}
+        liveEdges={filteredEdges}
+        focusedNodeId={focusedNodeId}
+        onFocusNode={handleGodModeSelect}
+      />
+
       <CloudSettings
         isOpen={isCloudSettingsOpen}
         onClose={() => setIsCloudSettingsOpen(false)}
