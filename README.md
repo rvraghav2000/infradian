@@ -1,82 +1,145 @@
-# Infradian
+<div align="center">
 
-Infrastructure graph visualizer & change-impact simulator (FastAPI + Neo4j + React), now with a
-full delivery platform around it: IaC, containers, CI, GitOps, observability, SLOs and chaos testing.
+# ∞ Infradian
+
+**See your cloud as a graph. Ask "what breaks if…?" before you change it. Turn the picture into Terraform.**
+
+An infrastructure studio that combines a live dependency map, a change-impact simulator, and a
+visual Terraform/OpenTofu designer — plus the full delivery platform (CI, GitOps, observability, SLOs) around it.
+
+![Python](https://img.shields.io/badge/Python-3.9+-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
+![Neo4j](https://img.shields.io/badge/Neo4j-graph_db-008CC1?logo=neo4j&logoColor=white)
+![Terraform](https://img.shields.io/badge/Terraform_/_OpenTofu-7B42BC?logo=terraform&logoColor=white)
+![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-ArgoCD_·_Helm-326CE5?logo=kubernetes&logoColor=white)
+![Prometheus](https://img.shields.io/badge/Prometheus_·_Grafana_·_Loki-E6522C?logo=prometheus&logoColor=white)
+![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-Trivy_·_ECR-2088FF?logo=githubactions&logoColor=white)
+
+![Edit Terraform and the canvas follows](docs/img/demo.gif)
+
+*Typing Terraform on the right — the architecture on the left updates live (and the reverse works too).*
+
+</div>
+
+> **No install needed to evaluate this project** — everything below is shown with real screenshots from the running app.
+> The infrastructure shown is a bundled **demo dataset**, not a live cloud account (see [Honest notes](#honest-notes)).
+
+---
+
+## What it does
+
+| | |
+|---|---|
+| 🗺️ **Understand** | Renders an infrastructure estate as an interactive dependency graph (VPCs, subnets, load balancers, clusters, databases) with live-style load metrics. |
+| 💥 **Predict** | Click any resource to see its **blast radius**, whether it is **safe to delete**, and a **counterfactual simulation** of removing it — what breaks, what degrades, what survives. |
+| ✏️ **Design** | Drag resources from **AWS, Azure, GCP and OCI** onto a draft canvas and get **Terraform / OpenTofu** generated in real time. |
+| 🔁 **Round-trip** | Edit the code and the canvas updates; edit the canvas and the code updates. Import existing `.tf` from a Git repo. |
+| 🛡️ **Govern** | Cost estimate, security guardrails and policy-as-code evaluated on every change; policy "deny" blocks apply. |
+| 🚀 **Ship** | Run `validate / plan / apply` in Docker, commit to Git, collaborate live with roles (viewer → admin). No destroy button, by design. |
+
+## Screenshots
+
+### Dependency map & impact analysis
+<p align="center"><img src="docs/img/map.png" width="49%"> <img src="docs/img/analysis.png" width="49%"></p>
+<p align="center"><em>Left: the demo estate. Right: selecting <code>EKS Worker Nodes</code> highlights its blast radius (3 nodes, 1 hop) and scores the impact.</em></p>
+
+### Multi-cloud designer → Terraform
+<p align="center"><img src="docs/img/palette.png" width="49%"> <img src="docs/img/studio-code.png" width="49%"></p>
+<p align="center"><em>Searchable AWS/Azure/GCP/OCI palette; generated, valid Terraform with real resource references.</em></p>
+
+### Governance, variables, deploy, team
+<p align="center"><img src="docs/img/studio-governance.png" width="49%"> <img src="docs/img/studio-variables.png" width="49%"></p>
+<p align="center"><img src="docs/img/studio-deploy.png" width="49%"> <img src="docs/img/studio-team.png" width="49%"></p>
+<p align="center"><em>Cost + policy + security findings · variables/outputs · plan/apply/Git/import · presence, comments, templates, RBAC.</em></p>
+
+<p align="center"><img src="docs/img/map-dark.png" width="70%"><br><em>Dark mode.</em></p>
+
+---
+
+## Architecture
 
 ```mermaid
 flowchart LR
-  dev[Developer] -- push --> gh[GitHub]
-  gh --> ci[GitHub Actions<br/>test · build · Trivy · push]
-  ci -- image --> ecr[(ECR)]
-  ci -- bump tag commit --> cfg[gitops/values]
-  cfg -- watched by --> argo[ArgoCD]
-  argo -- sync --> eks
-  subgraph eks[EKS / kind cluster]
-    api[inventory-api<br/>Go] --> pg[(PostgreSQL)]
-    prom[Prometheus] -- scrape /metrics --> api
-    prom --> am[Alertmanager]
-    promtail --> loki[Loki]
-    graf[Grafana] --> prom
-    graf --> loki
-    doc[pod_doctor.py] -. kubectl .-> api
+  subgraph UI["React 18 · Vite · Tailwind · Framer Motion"]
+    cy["Cytoscape + dagre canvas"]
+    studio["IaC Studio drawer"]
   end
-  tf[Terraform] -- VPC · EKS · ECR --> eks
-  tf -- state --> s3[(S3 + lockfile)]
+  subgraph API["FastAPI (Python)"]
+    graph["Graph API"]
+    engine["Analysis engine<br/>blast radius · safe-delete · simulation · readiness"]
+    iac["IaC engine<br/>catalog · codegen · HCL parser · rules · cost"]
+    collab["WebSocket collab + RBAC"]
+  end
+  neo[("Neo4j")]
+  docker["Docker<br/>terraform · tofu · checkov"]
+  git["Git remotes"]
+  cy <--> graph --> neo
+  cy --> engine
+  studio <--> iac
+  studio <--> collab
+  iac --> docker
+  iac --> git
 ```
 
-## Layout
-| Path | What |
+### Engineering highlights
+- **Analysis engine** (`backend/app/analysis/engine`) — weighted Dijkstra blast radius, counterfactual removal simulation (broken / degraded / unaffected), safe-delete checks, confidence scoring, architecture readiness and resilience scores, ranked "top actions". Covered by 36 unit tests.
+- **Bidirectional IaC sync** (`backend/app/iac`) — a deterministic generator (same canvas → byte-identical code) and an HCL parser (python-hcl2) that map back to the graph, preserving node identity and *your* resource names. Round-trip stability is tested.
+- **Dynamic linking** — containment and drawn edges become real references (`subnet_id = aws_subnet.app.id`); required-but-missing values (passwords, bucket names) become typed, sensitive variables automatically.
+- **Safe-by-default deploys** — apply is off unless the server opts in, needs explicit confirmation, a saved plan and zero policy denials; **no destroy path exists**. Git import is read-only (`.tf` files only, nothing executed).
+- **Real-time collaboration** — per-workspace WebSocket rooms (presence + last-writer-wins graph sync) with role enforcement on the server.
+
+### The platform around it
+A separate small service and the delivery pipeline show the operational side — see **[docs/PLATFORM.md](docs/PLATFORM.md)**:
+
+| Area | What's there |
 |---|---|
-| `infra/terraform/bootstrap` | One-time S3 state bucket (versioned, encrypted, native locking) |
-| `infra/terraform/aws` | VPC + EKS + ECR, remote state in S3 |
-| `infra/terraform/local-kind` | kind cluster config (local stand-in for EKS) |
-| `services/inventory-api` | Go service + PostgreSQL, `/metrics`, `/healthz`, `/readyz`, Dockerfile (distroless) |
-| `deploy/helm/inventory-api` | Helm chart (app, Postgres, PDB, ServiceMonitor) |
-| `.github/workflows/ci.yml` | test → build → **Trivy** → push to **ECR** → commit new tag to `gitops/` |
-| `gitops/` | ArgoCD app-of-apps: app, kube-prometheus-stack, Loki, observability config |
-| `observability/` | SLO recording rules + alerts, Grafana dashboard |
-| `tools/pod_doctor.py` | Detects unhealthy pods; reports or restarts them |
-| `chaos/` | k6 load test + game-day scripts |
-| `docs/` | Runbook, postmortem template |
-| `backend/`, `frontend/` | The original Infradian app |
+| IaC | Terraform for **VPC + EKS + ECR**, remote state in **S3 with native locking**, kind config for local dev |
+| App | Go service + PostgreSQL, Prometheus metrics, distroless image, Helm chart |
+| CI | GitHub Actions: test → build → **Trivy** scan → push to **ECR** → bump GitOps tag |
+| GitOps | **ArgoCD** app-of-apps — deploy by commit |
+| Observability | Prometheus, Grafana, Loki; **2 SLOs** (99.5% availability, p95 < 300 ms) with burn-rate alerts |
+| Automation | `pod_doctor.py` finds/restarts unhealthy pods; k6 load test; game-day scripts; runbook |
 
-## SLOs
-| SLO | Target | Alerts |
-|---|---|---|
-| Availability | 99.5% non-5xx over 30d (0.5% budget) | `InventoryAvailabilityBurnFast` (14.4× · page), `…BurnSlow` (6× · ticket), `InventoryDown` |
-| Latency | p95 < 300 ms | `InventoryLatencyP95High` |
+---
 
-## Run it locally (kind)
+## Tech stack
+
+| Layer | Technologies |
+|---|---|
+| Frontend | React 18, Vite 4, Tailwind CSS, Framer Motion, Cytoscape.js (+ dagre) |
+| Backend | Python, FastAPI, Pydantic v2, python-hcl2, WebSockets, Typer CLI |
+| Data | Neo4j (graph), JSON workspaces |
+| IaC | Terraform / OpenTofu, S3 remote state, Checkov (optional), Infracost (optional) |
+| Platform | Go, PostgreSQL, Docker, Helm, ArgoCD, kind/EKS, GitHub Actions, Trivy |
+| Observability | Prometheus, Alertmanager, Grafana, Loki |
+| Testing | pytest (48 backend tests), Go tests, pod-doctor tests, Playwright (screenshots) |
+
+## Try it
+
 ```bash
-# Only Docker is needed on the host. kind, kubectl, helm, trivy, terraform and k6 all run
-# inside the toolbox image (tools/toolbox) via the scripts/tb wrapper.
-scripts/local-up.sh            # kind + ArgoCD + app-of-apps
-scripts/tb python3 tools/pod_doctor.py -n inventory
-scripts/tb k6 run --env BASE_URL=http://host.docker.internal:8080 chaos/loadtest.js
-scripts/tb trivy image inventory-api:dev
-docker compose up                      # original app: Neo4j + FastAPI + React (:3000)
-docker compose --profile platform up   # + inventory-api and its Postgres (:8080)
-chaos/gameday.sh kill-pod      # | db-overload | bad-deploy | restore
+git clone https://github.com/rvraghav2000/infradian.git && cd infradian
+docker compose up            # Neo4j + FastAPI (:8000) + React (:3000)
 ```
-ArgoCD syncs from the repo's `main` branch, so push your commits first. For kind, the image is
-side-loaded (`inventory-api:dev`); for EKS, CI pushes to ECR and rewrites `gitops/values/inventory-api.yaml`.
+Open <http://localhost:3000>. If Neo4j is empty or down, the API falls back to the bundled demo graph.
+Run the tests: `cd backend && pip install -r requirements.txt pytest httpx && pytest app/analysis/engine tests/test_iac.py`.
+Regenerate the screenshots/GIF in this README: `docs/capture/run.sh` (Docker + a running app).
 
-## Run it on AWS
-```bash
-# prefix with scripts/tb to run terraform in the toolbox (pass AWS creds via env)
-cd infra/terraform/bootstrap && terraform init && terraform apply -var state_bucket_name=infradian-tfstate-<acct>
-cd ../aws && cp backend.hcl.example backend.hcl   # edit bucket
-terraform init -backend-config=backend.hcl && terraform apply
+## Repository map
 ```
-Set the repo secret `AWS_ROLE_ARN` (GitHub OIDC role with ECR push) for CI.
+frontend/           React app (canvas, panels, IaC Studio)        backend/app/analysis/   impact engine
+backend/app/iac/    codegen · parser · rules · cost · git · collab  backend/app/api/        REST routes
+services/           Go inventory service                            infra/terraform/        VPC · EKS · state bucket
+deploy/ gitops/     Helm chart · ArgoCD apps                        observability/          SLO rules · dashboards
+tools/ chaos/       pod_doctor · k6 · game-day                       docs/                   platform, IaC studio, runbook
+```
 
-## Tearing down
-Not automated here on purpose. When you're done with AWS, from `infra/terraform/aws` run
-`terraform destroy` (EKS + NAT cost money). The state bucket has `prevent_destroy`; remove that
-lifecycle block before destroying `bootstrap`.
+## Honest notes
+- **Demo data.** The map shows a bundled sample estate (with simulated load metrics), not a connected cloud account. Cloud connectors (AWS/Azure/GCP) and Terraform-state import exist but need your credentials.
+- **Not verified end-to-end here:** a live `terraform apply`, Checkov/Infracost runs, Git push/remote import, and the Kubernetes/ArgoCD stack were not exercised against real infrastructure. The Helm chart lints, Terraform validates, and the Go/Python tests pass.
+- **RBAC is authorization, not authentication** — it trusts a user header, so put it behind SSO before sharing. Collaboration is single-process and last-writer-wins.
+- The post-incident write-up is a template ([docs/postmortems](docs/postmortems/TEMPLATE.md)) until a real game day is run.
 
-## Status / still to do
-- Postmortem: `docs/postmortems/TEMPLATE.md` is ready; the real one needs the game-day run on a live cluster.
-- Demo GIF: record after the game day and drop it at `docs/demo.gif`.
-- `kind`, `helm`, `trivy` and an AWS account are needed to exercise the cluster-side pieces; here only
-  the Go tests, Docker build, `helm lint`, `terraform validate` and `pod_doctor` tests were run.
+## Roadmap
+Real cloud discovery as the default data source · OIDC auth · CRDT-based collaboration · more resource generators (Azure VM networking, GCP Cloud SQL) · a recorded chaos game day and postmortem.
