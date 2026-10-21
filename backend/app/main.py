@@ -28,6 +28,7 @@ from .api.aws_ingestion import router as aws_router
 from .api.integrations import router as cloud_router
 from .api.uim_api import router as uim_router
 from .api.workspaces import router as workspace_router
+from .iac.api import router as iac_router, collab_ws
 
 app = FastAPI(
     title="Infradian Data Engine",
@@ -457,3 +458,5 @@ app.include_router(aws_router, prefix="/api/v1")
 app.include_router(cloud_router, prefix="/api/v1")
 app.include_router(uim_router, prefix="/api/v1")
 app.include_router(workspace_router, prefix="/api/v1")
+app.include_router(iac_router, prefix="/api/v1")
+app.add_api_websocket_route("/api/v1/collab/ws/{workspace}", collab_ws)

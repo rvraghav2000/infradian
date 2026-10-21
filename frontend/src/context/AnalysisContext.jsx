@@ -19,7 +19,10 @@ export function AnalysisProvider({ children }) {
   const [isSimulationMode, setIsSimulationMode] = useState(false);
 
   // ── Cloud provider filter ────────────────────────────────────
-  const [cloudFilter, setCloudFilter] = useState({ aws: true, azure: true, gcp: true });
+  const [cloudFilter, setCloudFilter] = useState({ aws: true, azure: true, gcp: true, oci: true });
+
+  // ── IaC studio settings (persisted with the workspace) ───────
+  const [iac, setIac] = useState({ tool: 'terraform', variables: [], outputs: [], locals: {} });
 
   // ── Account filter ───────────────────────────────────────────
   const [activeAccounts, setActiveAccounts] = useState(new Set());
@@ -293,7 +296,8 @@ export function AnalysisProvider({ children }) {
     if (ws.draftNodes) setDraftData({ nodes: ws.draftNodes, edges: ws.draftEdges || [] });
     if (ws.ghostNodeIds) setGhostNodeIds(new Set(ws.ghostNodeIds));
     if (ws.annotations) setAnnotations(ws.annotations);
-    if (ws.cloudFilter) setCloudFilter(ws.cloudFilter);
+    if (ws.cloudFilter) setCloudFilter({ oci: true, ...ws.cloudFilter });
+    if (ws.iac && Object.keys(ws.iac).length) setIac(prev => ({ ...prev, ...ws.iac }));
     setActiveWorkspace({ id: ws.id, name: ws.name, description: ws.description });
     setHasUnsavedChanges(false);
   }, []);
@@ -304,7 +308,8 @@ export function AnalysisProvider({ children }) {
     ghostNodeIds: [...ghostNodeIds],
     annotations,
     cloudFilter,
-  }), [draftData, ghostNodeIds, annotations, cloudFilter]);
+    iac,
+  }), [draftData, ghostNodeIds, annotations, cloudFilter, iac]);
 
 
   const selectPath = useCallback((path) => {
@@ -339,7 +344,7 @@ export function AnalysisProvider({ children }) {
     activeWorkspace, setActiveWorkspace, hasUnsavedChanges, setHasUnsavedChanges,
     loadWorkspaceState, getWorkspacePayload,
     // Simulation / Drafting
-    draftData, setDraftData,
+    draftData, setDraftData, iac, setIac,
     handleNodeDrop, handleDeleteDraftNode, updateDraftNode,
     handleAddDraftEdge, handleDeleteDraftEdge,
     // Results

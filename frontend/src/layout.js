@@ -53,6 +53,45 @@ export const NODE_CATEGORIES = {
     aws_api_gateway:     { category: 'network',       icon: '🚪', color: '#007AFF', label: 'API Gateway' },
 };
 
+/* ── Multi-cloud catalog (served by /api/v1/iac/catalog) ───────── */
+
+export const PROVIDER_META = {
+    aws:   { label: 'AWS',   color: '#FF9900' },
+    azure: { label: 'Azure', color: '#0078D4' },
+    gcp:   { label: 'GCP',   color: '#34A853' },
+    oci:   { label: 'OCI',   color: '#C74634' },
+};
+
+const CATEGORY_COLORS = {
+    region: '#5856D6', network: '#007AFF', compute: '#34C759', data: '#FF3B30',
+    security: '#FF9500', observability: '#007AFF',
+};
+
+/** Register catalog resources so the canvas can style them, and return palette groups per provider. */
+export function registerCatalog(resources) {
+    const groups = {};
+    for (const r of resources) {
+        const color = CATEGORY_COLORS[r.category] || PROVIDER_META[r.provider]?.color || '#86868b';
+        NODE_CATEGORIES[r.type] = { category: r.category === 'network' ? 'network' : r.category, icon: r.icon, color, label: r.label };
+        (groups[r.provider] ||= []).push({
+            type: r.type, label: r.label, icon: r.icon, color,
+            defaultData: { type: r.type, label: r.label, status: 'planned', metrics: { current_load: 0 }, history: [], parentId: null },
+        });
+    }
+    return Object.entries(groups).map(([provider, items]) => ({
+        category: `${PROVIDER_META[provider]?.label || provider} resources`, provider, items,
+    }));
+}
+
+/** Which cloud a node type belongs to (for the provider filter). */
+export function providerOfType(type) {
+    if (!type) return 'aws';
+    if (type.startsWith('azurerm_') || type.startsWith('azure_')) return 'azure';
+    if (type.startsWith('google_') || type.startsWith('gcp_')) return 'gcp';
+    if (type.startsWith('oci_')) return 'oci';
+    return 'aws';
+}
+
 export function getCategoryMeta(type) {
     return NODE_CATEGORIES[type] || { category: 'compute', icon: '⬡', color: '#86868b', label: type };
 }

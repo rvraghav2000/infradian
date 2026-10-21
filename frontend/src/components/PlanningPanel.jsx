@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PALETTE_PRIMITIVES } from '../layout';
+import { useEffect, useMemo } from 'react';
+import { PALETTE_PRIMITIVES, registerCatalog, PROVIDER_META } from '../layout';
+import { iacApi } from '../services/iacApi';
 
 /**
  * PlanningPanel — categorized drag palette that slides in from the left.
@@ -10,7 +12,26 @@ import { PALETTE_PRIMITIVES } from '../layout';
  */
 export default function PlanningPanel({ theme }) {
     const [collapsed, setCollapsed] = useState(false);
+    const [catalogGroups, setCatalogGroups] = useState([]);
+    const [query, setQuery] = useState('');
     const isDark = theme === 'dark';
+
+    useEffect(() => {
+        let alive = true;
+        iacApi.catalog()
+            .then(c => { if (alive) setCatalogGroups(registerCatalog(c.resources)); })
+            .catch(() => { /* backend offline — core palette still works */ });
+        return () => { alive = false; };
+    }, []);
+
+    const groups = useMemo(() => {
+        const q = query.trim().toLowerCase();
+        const cloud = catalogGroups
+            .map(g => ({ ...g, items: q ? g.items.filter(i => `${i.label} ${i.type}`.toLowerCase().includes(q)) : g.items }))
+            .filter(g => g.items.length);
+        const core = q ? PALETTE_PRIMITIVES.map(g => ({ ...g, items: g.items.filter(i => `${i.label} ${i.type}`.toLowerCase().includes(q)) })).filter(g => g.items.length) : PALETTE_PRIMITIVES;
+        return [...core, ...cloud];
+    }, [catalogGroups, query]);
 
     // Theme tokens — panel adapts exactly like the rest of the Infradian UI
     const panelBg        = isDark ? 'rgba(18,18,20,0.92)'        : 'rgba(248,248,250,0.94)';
@@ -183,7 +204,18 @@ export default function PlanningPanel({ theme }) {
 
                     {/* ── Categories ──────────────────────────────────────────── */}
                     <div style={{ padding: collapsed ? '8px 0' : '8px 10px 32px', flex: 1 }}>
-                        {PALETTE_PRIMITIVES.map((group) => (
+                        {!collapsed && (
+                            <input
+                                value={query}
+                                onChange={e => setQuery(e.target.value)}
+                                placeholder="Search AWS · Azure · GCP · OCI…"
+                                style={{
+                                    margin: '0 0 8px', width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: 8, fontSize: 12,
+                                    border: `1px solid ${toggleBorder}`, background: toggleBg, color: headerText, outline: 'none',
+                                }}
+                            />
+                        )}
+                        {groups.map((group) => (
                             <CategorySection
                                 key={group.category}
                                 group={group}

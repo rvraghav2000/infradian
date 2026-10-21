@@ -1,3 +1,5 @@
+import { authHeaders } from '../services/iacApi';
+
 const API_BASE = '/api/v1/workspaces';
 
 export const workspaceApi = {
@@ -19,7 +21,7 @@ export const workspaceApi = {
     create: async (payload) => {
         const res = await fetch(`${API_BASE}/`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify(payload),
         });
         if (!res.ok) throw new Error('Failed to create workspace');
@@ -30,7 +32,7 @@ export const workspaceApi = {
     update: async (id, payload) => {
         const res = await fetch(`${API_BASE}/${id}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify(payload),
         });
         if (!res.ok) throw new Error('Failed to update workspace');
@@ -41,6 +43,7 @@ export const workspaceApi = {
     delete: async (id) => {
         const res = await fetch(`${API_BASE}/${id}`, {
             method: 'DELETE',
+            headers: authHeaders(),
         });
         if (!res.ok) throw new Error('Failed to delete workspace');
         return await res.json();
