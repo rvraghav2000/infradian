@@ -167,6 +167,8 @@ async def get_nodes(account_id: Optional[str] = None) -> Dict[str, Any]:
         edges_raw = db.query(edges_query, parameters=params)
         if nodes_raw is None or edges_raw is None:
             raise Exception("Neo4j unavailable")
+        if not nodes_raw:
+            raise Exception("Graph is empty")
         
         nodes_raw = nodes_raw or []
         edges_raw = edges_raw or []
@@ -256,8 +258,8 @@ async def post_graph(
         SET r.label = $label
         """
         params = {
-            "source_id": edge.source_id,
-            "target_id": edge.target_id,
+            "source_id": edge.source,
+            "target_id": edge.target,
             "label": edge.label
         }
         db.query(cypher, params)

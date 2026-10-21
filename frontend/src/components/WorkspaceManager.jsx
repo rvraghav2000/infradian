@@ -1,36 +1,7 @@
 import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAnalysis } from '../context/AnalysisContext';
 import { workspaceApi } from '../api/workspaceApi';
-import { cn } from "@/lib/utils";
-import { 
-  X, 
-  Save, 
-  FolderOpen, 
-  Trash2, 
-  Plus, 
-  Info,
-  ChevronRight,
-  Database,
-  Calendar,
-  Layers,
-  Search
-} from "lucide-react";
-
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { Label } from "@/components/ui/label";
 
 export default function WorkspaceManager({ isOpen, onClose, theme = 'light' }) {
     const isDark = theme === 'dark';
@@ -54,9 +25,6 @@ export default function WorkspaceManager({ isOpen, onClose, theme = 'light' }) {
             if (activeWorkspace) {
                 setName(activeWorkspace.name);
                 setDescription(activeWorkspace.description);
-            } else {
-                setName('');
-                setDescription('');
             }
         }
     }, [isOpen, activeWorkspace]);
@@ -122,197 +90,146 @@ export default function WorkspaceManager({ isOpen, onClose, theme = 'light' }) {
         }
     };
 
+    if (!isOpen) return null;
+
     return (
-        <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent className="sm:max-w-[480px] p-0 overflow-hidden border-border/50 bg-background/95 backdrop-blur-xl gap-0 shadow-2xl">
-                <DialogHeader className="p-6 pb-4 border-b">
-                    <div className="flex items-center justify-between">
-                        <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                                <span className={cn(
-                                    "p-1.5 rounded-lg",
-                                    view === 'list' ? "bg-primary/10 text-primary" : "bg-orange-500/10 text-orange-500"
-                                )}>
-                                    {view === 'list' ? <Database className="size-4" /> : <Save className="size-4" />}
-                                </span>
-                                <DialogTitle className="text-xl font-bold tracking-tight">
-                                    {view === 'list' ? 'Workspaces' : 'Save Changes'}
-                                </DialogTitle>
-                            </div>
-                            <DialogDescription className="text-xs">
-                                {view === 'list' 
-                                    ? 'Load, manage, and delete infrastructure snapshots.' 
-                                    : 'Save your current infrastructure map to a workspace.'}
-                            </DialogDescription>
-                        </div>
-                        <Button
-                            variant="outline"
-                            size="sm"
+        <div className="fixed inset-0 z-[100] flex items-center justify-center pointer-events-auto">
+            {/* Backdrop */}
+            <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+                onClick={onClose}
+            />
+
+            {/* Modal */}
+            <motion.div
+                initial={{ scale: 0.95, opacity: 0, y: 20 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.95, opacity: 0, y: 20 }}
+                className="relative w-full max-w-md rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+                style={{
+                    background: isDark ? 'rgba(30,30,32,0.85)' : 'rgba(255,255,255,0.9)',
+                    backdropFilter: 'blur(30px) saturate(2)',
+                    WebkitBackdropFilter: 'blur(30px) saturate(2)',
+                    border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`,
+                    maxHeight: '80vh',
+                }}
+            >
+                {/* Header */}
+                <div className="px-5 py-4 flex items-center justify-between border-b" style={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }}>
+                    <div className="flex items-center gap-3">
+                        <button
                             onClick={() => setView(view === 'list' ? 'save' : 'list')}
-                            className="text-[10px] font-bold uppercase tracking-widest h-8 px-3"
+                            className="text-xs font-semibold uppercase tracking-wider px-2 py-1 rounded"
+                            style={{ 
+                                color: '#007AFF',
+                                background: 'rgba(0,122,255,0.1)',
+                                border: 'none', cursor: 'pointer'
+                            }}
                         >
-                            {view === 'list' ? (
-                                <><Plus className="size-3 mr-1.5" /> New Snapshot</>
-                            ) : (
-                                <><FolderOpen className="size-3 mr-1.5" /> View All</>
-                            )}
-                        </Button>
+                            {view === 'list' ? 'Save Current' : 'View All'}
+                        </button>
                     </div>
-                </DialogHeader>
-
-                <div className="flex-1 flex flex-col min-h-0">
-                    <ScrollArea className="max-h-[400px]">
-                        <div className="p-6">
-                            {loading ? (
-                                <div className="flex flex-col items-center justify-center py-12 gap-3 opacity-50">
-                                    <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                                    <span className="text-[10px] font-bold uppercase tracking-widest">Synchronizing...</span>
-                                </div>
-                            ) : view === 'list' ? (
-                                <div className="space-y-3">
-                                    {workspaces.length === 0 ? (
-                                        <div className="flex flex-col items-center justify-center py-12 text-center space-y-4 opacity-50">
-                                            <Layers className="size-12 stroke-[1]" />
-                                            <div className="space-y-1">
-                                                <p className="text-sm font-bold text-foreground">No environments yet</p>
-                                                <p className="text-xs">Save your current view to create a snapshot.</p>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        workspaces.map(ws => (
-                                            <div 
-                                                key={ws.id} 
-                                                className={cn(
-                                                    "group relative p-4 rounded-xl border transition-all duration-200 cursor-pointer overflow-hidden",
-                                                    activeWorkspace?.id === ws.id 
-                                                        ? "bg-primary/5 border-primary shadow-sm" 
-                                                        : "hover:bg-muted/50 hover:border-muted-foreground/30"
-                                                )}
-                                                onClick={() => handleLoad(ws.id)}
-                                            >
-                                                <div className="flex justify-between items-start mb-2">
-                                                    <div className="space-y-1 min-w-0">
-                                                        <div className="flex items-center gap-2 text-sm font-bold truncate pr-8">
-                                                            {ws.name}
-                                                            {activeWorkspace?.id === ws.id && (
-                                                                <Badge variant="default" className="text-[8px] h-3.5 px-1 font-black bg-primary text-primary-foreground uppercase tracking-widest leading-none">
-                                                                    Active
-                                                                </Badge>
-                                                            )}
-                                                        </div>
-                                                        {ws.description && (
-                                                            <p className="text-[11px] text-muted-foreground line-clamp-1 italic font-medium">
-                                                                {ws.description}
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                    <Button 
-                                                        variant="ghost" 
-                                                        size="icon-xs" 
-                                                        onClick={(e) => { e.stopPropagation(); handleDelete(ws.id); }}
-                                                        className="opacity-0 group-hover:opacity-100 absolute top-3 right-3 h-7 w-7 text-destructive hover:bg-destructive/10 transition-all rounded-full"
-                                                    >
-                                                        <Trash2 className="size-3.5" />
-                                                    </Button>
-                                                </div>
-                                                <div className="flex items-center gap-3 mt-3 opacity-40 group-hover:opacity-100 transition-opacity">
-                                                    <div className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-tighter text-muted-foreground">
-                                                        <Calendar className="size-2.5" />
-                                                        {new Date().toLocaleDateString()}
-                                                    </div>
-                                                    <Separator orientation="vertical" className="h-2.5" />
-                                                    <div className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-tighter text-muted-foreground">
-                                                        <Search className="size-2.5" />
-                                                        Snapshot ID: {ws.id.slice(0, 8)}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))
-                                    )}
-                                </div>
-                            ) : (
-                                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                                    <div className="space-y-4">
-                                        <div className="space-y-2">
-                                            <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Workspace Name</Label>
-                                            <Input 
-                                                value={name}
-                                                onChange={(e) => setName(e.target.value)}
-                                                placeholder="e.g. Production Cluster v2"
-                                                className="h-10 text-xs font-medium"
-                                                autoFocus
-                                            />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Description (Optional)</Label>
-                                            <Textarea 
-                                                value={description}
-                                                onChange={(e) => setDescription(e.target.value)}
-                                                placeholder="Document current topological changes or architectural decisions..."
-                                                className="min-h-[120px] text-xs font-medium resize-none"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div className="p-3 rounded-lg bg-red-500/5 border border-red-500/10 flex gap-3 items-start">
-                                        <Info className="size-4 text-red-500 shrink-0 mt-0.5" />
-                                        <p className="text-[10px] leading-relaxed text-muted-foreground">
-                                            Saving will capture the <strong>current layout</strong>, active account filters, and all planned/draft nodes.
-                                        </p>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </ScrollArea>
+                    <button onClick={onClose} className="p-1 rounded-full cursor-pointer bg-transparent border-0" style={{ color: isDark ? '#aeaeb2' : '#86868b' }}>
+                        ✕
+                    </button>
                 </div>
 
-                <DialogFooter className="p-6 border-t bg-muted/20 sm:justify-end">
-                    {view === 'list' ? (
-                        <div className="flex items-center justify-between w-full">
-                            <span className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground opacity-40">
-                                Snapshot count: {workspaces.length}
-                            </span>
-                            <Button variant="ghost" size="sm" onClick={onClose} className="text-[10px] font-black uppercase">
-                                Dismiss
-                            </Button>
+                {/* Content */}
+                <div className="p-5 overflow-y-auto w-full custom-scrollbar flex-1">
+                    {loading ? (
+                        <div className="flex justify-center py-10">
+                            <div className="w-6 h-6 border-2 border-[#007AFF] border-t-transparent rounded-full animate-spin" />
+                        </div>
+                    ) : view === 'list' ? (
+                        <div className="flex flex-col gap-3">
+                            <h3 className="text-sm font-bold mb-2" style={{ color: isDark ? '#fff' : '#1d1d1f' }}>Workspaces</h3>
+                            {workspaces.length === 0 ? (
+                                <p className="text-xs py-4 text-center" style={{ color: isDark ? '#aeaeb2' : '#86868b' }}>
+                                    No saved workspaces yet.
+                                </p>
+                            ) : (
+                                workspaces.map(ws => (
+                                    <div key={ws.id} className="group relative p-3 rounded-xl border flex items-center justify-between transition-all"
+                                         style={{ 
+                                             borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                                             background: activeWorkspace?.id === ws.id ? (isDark ? 'rgba(0,122,255,0.1)' : 'rgba(0,122,255,0.05)') : 'transparent'
+                                         }}>
+                                        <div className="flex-1 cursor-pointer" onClick={() => handleLoad(ws.id)}>
+                                            <div className="text-xs font-bold flex items-center gap-2" style={{ color: isDark ? '#fff' : '#1d1d1f' }}>
+                                                {ws.name}
+                                                {activeWorkspace?.id === ws.id && <span className="text-[9px] uppercase tracking-wider text-[#007AFF] bg-[#007AFF]/10 px-1.5 rounded">Active</span>}
+                                            </div>
+                                            {ws.description && <div className="text-[10px] mt-1" style={{ color: isDark ? '#aeaeb2' : '#86868b' }}>{ws.description}</div>}
+                                        </div>
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); handleDelete(ws.id); }}
+                                            className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md hover:bg-red-500/10 text-red-500 cursor-pointer border-0 bg-transparent transition-all"
+                                        >
+                                            🗑
+                                        </button>
+                                    </div>
+                                ))
+                            )}
                         </div>
                     ) : (
-                        <div className="flex gap-2 w-full sm:w-auto">
-                            <Button 
-                                variant="outline" 
-                                size="sm" 
-                                onClick={() => setView('list')}
-                                className="flex-1 sm:flex-none text-[10px] font-black uppercase tracking-widest h-9"
-                            >
-                                Cancel
-                            </Button>
-                            {activeWorkspace && (
-                                <Button 
-                                    size="sm" 
-                                    onClick={() => handleSave(false)}
-                                    disabled={!name.trim() || loading}
-                                    className="flex-1 sm:flex-none text-[10px] font-black uppercase tracking-widest h-9"
-                                >
-                                    Overwrite Active
-                                </Button>
-                            )}
-                            <Button 
-                                variant={activeWorkspace ? "outline" : "default"}
-                                size="sm" 
-                                onClick={() => handleSave(true)}
-                                disabled={!name.trim() || loading}
-                                className={cn(
-                                    "flex-1 sm:flex-none text-[10px] font-black uppercase tracking-widest h-9",
-                                    !activeWorkspace && "shadow-lg shadow-primary/20"
+                        <div className="flex flex-col gap-4">
+                            <h3 className="text-sm font-bold" style={{ color: isDark ? '#fff' : '#1d1d1f' }}>
+                                {activeWorkspace ? 'Update Workspace' : 'Save New Workspace'}
+                            </h3>
+                            <div className="flex flex-col gap-1.5">
+                                <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: isDark ? '#aeaeb2' : '#86868b' }}>Name</label>
+                                <input 
+                                    className="px-3 py-2 border rounded-lg text-xs"
+                                    style={{
+                                        background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.02)',
+                                        borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+                                        color: isDark ? '#fff' : '#1d1d1f'
+                                    }}
+                                    value={name}
+                                    onChange={(e) => setName(e.target.value)}
+                                    placeholder="Production Overhaul v2"
+                                />
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                                <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: isDark ? '#aeaeb2' : '#86868b' }}>Description (optional)</label>
+                                <textarea 
+                                    className="px-3 py-2 border rounded-lg text-xs resize-none h-20"
+                                    style={{
+                                        background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.02)',
+                                        borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+                                        color: isDark ? '#fff' : '#1d1d1f'
+                                    }}
+                                    value={description}
+                                    onChange={(e) => setDescription(e.target.value)}
+                                    placeholder="Adding read replicas and migrating to Graviton instances..."
+                                />
+                            </div>
+                            <div className="flex gap-2 mt-2">
+                                {activeWorkspace && (
+                                    <button 
+                                        onClick={() => handleSave(false)}
+                                        disabled={!name.trim()}
+                                        className="flex-1 py-2 rounded-lg text-xs font-bold cursor-pointer border-none bg-[#007AFF] text-white disabled:opacity-50"
+                                    >
+                                        Update Active
+                                    </button>
                                 )}
-                            >
-                                {activeWorkspace ? 'Save As New' : 'Create Snapshot'}
-                            </Button>
+                                <button 
+                                    onClick={() => handleSave(true)}
+                                    disabled={!name.trim()}
+                                    className={`flex-1 py-2 rounded-lg text-xs font-bold cursor-pointer border-none disabled:opacity-50 ${!activeWorkspace ? 'bg-[#007AFF] text-white' : 'bg-transparent border border-[#007AFF] text-[#007AFF]'}`}
+                                    style={activeWorkspace ? { border: '1px solid rgba(0,122,255,0.3)' } : {}}
+                                >
+                                    Save as New
+                                </button>
+                            </div>
                         </div>
                     )}
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
+                </div>
+            </motion.div>
+        </div>
     );
 }
-

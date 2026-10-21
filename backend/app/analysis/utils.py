@@ -61,5 +61,32 @@ def get_system_graph_models() -> Tuple[List[Node], List[Edge]]:
                 label=record.get("rel_type", "DEPENDS_ON"),
                 attributes=record.get("props", {})
             ))
+    if not nodes:
+        import json
+        from pathlib import Path
+        sample_path = Path(__file__).resolve().parent.parent.parent.parent / "sample_payload.json"
+        if sample_path.exists():
+            with open(sample_path, 'r') as f:
+                data = json.load(f)
+                for n in data.get("nodes", []):
+                    if "id" not in n: continue
+                    nodes.append(Node(
+                        id=n.get("id"),
+                        type=n.get("type", "unknown"),
+                        label=n.get("label") or n.get("id"),
+                        status=n.get("status", "live"),
+                        parent_id=n.get("parent_id"),
+                        metrics=NodeMetrics(current_load=0.0),
+                        attributes=n
+                    ))
+                for e in data.get("edges", []):
+                    if "source_id" not in e or "target_id" not in e: continue
+                    edges.append(Edge(
+                        id=e.get("id", f"{e.get('source_id')}-{e.get('target_id')}"),
+                        source=e.get("source_id"),
+                        target=e.get("target_id"),
+                        label=e.get("label", "DEPENDS_ON"),
+                        attributes=e
+                    ))
             
     return nodes, edges

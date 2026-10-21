@@ -2,30 +2,19 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getCategoryMeta } from '../layout';
 import { useAnalysis } from '../context/AnalysisContext';
-import { cn } from "@/lib/utils";
-import { 
-  Activity
-} from "lucide-react";
-
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
+import NodeHoverPreview from './NodeHoverPreview';
 
 const loadProfile = (load) => {
-    if (load > 0.8) return { color: 'text-destructive', label: 'CRITICAL', bg: 'bg-destructive/10' };
-    if (load > 0.5) return { color: 'text-orange-500', label: 'HIGH', bg: 'bg-orange-500/10' };
-    return { color: 'text-green-500', label: 'NORMAL', bg: 'bg-green-500/10' };
+    if (load > 0.8) return { color: '#FF3B30', label: 'CRITICAL', bg: 'rgba(255,59,48,0.1)' };
+    if (load > 0.5) return { color: '#FF9500', label: 'HIGH', bg: 'rgba(255,149,0,0.1)' };
+    return { color: '#34C759', label: 'NORMAL', bg: 'rgba(52,199,89,0.1)' };
 };
 
-
+const STATUS_STYLE = {
+    success: { border: '#34C759', bg: 'rgba(52,199,89,0.04)', badge: '#34C759', icon: '✓', color: '#34C759' },
+    failure: { border: '#FF3B30', bg: 'rgba(255,59,48,0.04)', badge: '#FF3B30', icon: '✕', color: '#FF3B30' },
+    in_progress: { border: '#FF9500', bg: 'rgba(255,149,0,0.04)', badge: '#FF9500', icon: '⟳', color: '#FF9500' },
+};
 
 export default function InfraNode({
     nodeLayout,
@@ -45,44 +34,31 @@ export default function InfraNode({
     const [localHovered, setHovered] = useState(false);
     const { isSimulationMode } = useAnalysis();
 
+    // Logic for hover state
     const hovered = physicsHovered || localHovered;
     const { node } = nodeLayout;
     const lp = loadProfile(node.metrics?.current_load || 0);
     const meta = getCategoryMeta(node.type);
 
     if (nodeLayout.isRegion) {
-        return (
-            <RegionNode 
-                layout={nodeLayout} 
-                meta={meta} 
-                dimmed={dimmed} 
-                focused={focused} 
-                theme={theme} 
-                onNodeMouseDown={onNodeMouseDown} 
-                isDragging={isDragging} 
-            />
-        );
+        return <RegionNode layout={nodeLayout} meta={meta} dimmed={dimmed} focused={focused} theme={theme} onNodeMouseDown={onNodeMouseDown} isDragging={isDragging} />;
     }
 
     const isExpanded = expandedNodeId === node.id;
+
+    // Simulation mapping
     const isPlanned = node.status === 'planned';
-    const isRemovalCandidate = node.id.includes('remove');
+    const isRemovalCandidate = node.id.includes('remove'); // Mock for now until we have real simulation states
 
     return (
         <CardNode
-            layout={nodeLayout} 
-            meta={meta} 
-            lp={lp}
-            hovered={hovered} 
-            setHovered={setHovered}
-            dimmed={dimmed} 
-            focused={focused} 
-            theme={theme}
+            layout={nodeLayout} meta={meta} lp={lp}
+            hovered={hovered} setHovered={setHovered}
+            dimmed={dimmed} focused={focused} theme={theme}
             onNodeClick={onNodeClick}
             onNodeMouseDown={onNodeMouseDown}
             isExpanded={isExpanded}
-            onGodModeSelect={onGodModeSelect} 
-            isDragging={isDragging}
+            onGodModeSelect={onGodModeSelect} isDragging={isDragging}
             isRemovalCandidate={isRemovalCandidate}
             isGhost={isGhost}
             interactionMode={interactionMode}
@@ -90,44 +66,99 @@ export default function InfraNode({
     );
 }
 
+/* ── Region (VPC / Subnet) — Dotted boundary ──────────────────── */
+
 function RegionNode({ layout, meta, dimmed, focused, theme, onNodeMouseDown, isDragging }) {
     const { node } = layout;
     const isVPC = node.type === 'aws_vpc';
     const isDark = theme === 'dark';
 
+    const accentColor = isVPC
+        ? (isDark ? '#0a84ff' : '#007AFF')
+        : (isDark ? '#5e5ce6' : '#5856D6');
+
     return (
         <motion.div
-            className={cn(
-                "node-region relative w-full h-full transition-all duration-300 pointer-events-none will-change-transform",
-                isVPC ? "rounded-[32px]" : "rounded-[20px]"
-            )}
+            className="node-region"
             initial={{ opacity: 0 }}
             animate={{
                 opacity: dimmed ? 0.15 : 1,
                 filter: dimmed ? 'saturate(0.2)' : 'saturate(1)',
             }}
+            transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
             style={{
+                width: '100%',
+                height: '100%',
+                position: 'relative',
+                // Dashed region border — matches the overall isometric grid aesthetic
                 border: focused
-                    ? `2px solid ${isVPC ? 'var(--primary)' : 'var(--muted-foreground)'}`
-                    : `1.5px dashed ${isVPC ? 'rgba(0,122,255,0.2)' : 'rgba(142,142,147,0.15)'}`,
-                background: isVPC ? 'rgba(0,122,255,0.01)' : 'rgba(142,142,147,0.01)',
+                    ? (isDark ? '2px solid rgba(255,255,255,0.3)' : '2px solid rgba(0,0,0,0.15)')
+                    : `1.5px dashed ${isVPC
+                        ? (isDark ? 'rgba(10,132,255,0.22)' : 'rgba(0,122,255,0.18)')
+                        : (isDark ? 'rgba(94,92,230,0.22)' : 'rgba(88,86,214,0.14)')}`,
+                borderRadius: isVPC ? 24 : 16,
+                background: isVPC
+                    ? (isDark ? 'rgba(10,132,255,0.025)' : 'rgba(0,122,255,0.015)')
+                    : (isDark ? 'rgba(94,92,230,0.025)' : 'rgba(88,86,214,0.012)'),
+                pointerEvents: 'none',
+                willChange: 'transform, width, height',
             }}
         >
-            <div className="absolute top-3 left-3.5 inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-background/80 backdrop-blur-md border shadow-sm max-w-[calc(100%-28px)] overflow-hidden">
-                <span className="text-xs shrink-0">{meta.icon}</span>
-                <span className={cn(
-                    "text-[10px] font-bold tracking-tight truncate",
-                    isVPC ? "text-primary" : "text-foreground"
-                )}>
+            {/* Label badge — top-left, matching the rest of the Infradian UI system */}
+            <div
+                style={{
+                    position: 'absolute',
+                    top: 10,
+                    left: 14,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    padding: '3px 8px 3px 6px',
+                    borderRadius: 8,
+                    background: isDark ? 'rgba(28,28,30,0.7)' : 'rgba(255,255,255,0.75)',
+                    backdropFilter: 'blur(10px)',
+                    WebkitBackdropFilter: 'blur(10px)',
+                    border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`,
+                    boxShadow: isDark ? '0 1px 6px rgba(0,0,0,0.3)' : '0 1px 4px rgba(0,0,0,0.05)',
+                    pointerEvents: 'none',
+                    maxWidth: 'calc(100% - 28px)',
+                    overflow: 'hidden',
+                }}
+            >
+                {/* Category icon */}
+                <span style={{ fontSize: 11, lineHeight: 1, flexShrink: 0 }}>{meta.icon}</span>
+
+                {/* Label — Inter, semibold, same scale as node meta text */}
+                <span style={{
+                    fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    letterSpacing: '-0.01em',
+                    color: accentColor,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                }}>
                     {node.label}
                 </span>
-                <span className="text-[8px] font-black uppercase text-muted-foreground/40 shrink-0">
-                    {node.id.slice(0, 8)}
+
+                {/* ID chip — muted, same as the sub-label on CardNode */}
+                <span style={{
+                    fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
+                    fontSize: 9,
+                    fontWeight: 500,
+                    color: isDark ? '#636366' : '#aeaeb2',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                }}>
+                    {node.id}
                 </span>
             </div>
         </motion.div>
     );
 }
+
+/* ── Card Node — Click to expand pipeline panel ───────────────── */
 
 function CardNode({
     layout, meta, lp, hovered, setHovered,
@@ -141,14 +172,11 @@ function CardNode({
 
     return (
         <motion.div
-            className={cn(
-                "node-card absolute cursor-grab active:cursor-grabbing",
-                isPlanned && "animate-pulse"
-            )}
+            className={`node-card absolute ${isPlanned ? 'ghost-socket' : ''} cursor-grab active:cursor-grabbing`}
             onMouseDown={(e) => onNodeMouseDown && onNodeMouseDown(node.id, e)}
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{
-                opacity: isGhost ? 0.4 : (dimmed ? 0.12 : 1),
+                opacity: isGhost ? 0.4 : (dimmed ? 0.12 : (isPlanned ? undefined : 1)),
                 scale: 1,
                 filter: isGhost ? 'grayscale(100%) brightness(0.9)' : (dimmed ? 'saturate(0.2) brightness(0.8)' : 'brightness(1)'),
             }}
@@ -157,88 +185,214 @@ function CardNode({
             onMouseLeave={() => setHovered(false)}
             style={{
                 transform: `translate3d(${x}px, ${y}px, 0)`,
-                width: w,
-                zIndex: hovered ? 150 : 10,
-                pointerEvents: 'none',
-                transition: isDragging ? 'none' : 'transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.15)',
+                width: isExpanded ? 320 : w,
+                position: 'relative',
+                zIndex: isExpanded ? 100 : hovered ? 150 : 10, // Higher Z for hover
+                pointerEvents: 'none', // Critical: Let drag events reach WebGL Cytoscape beneath
+                transition: isDragging ? 'none' : 'transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.15), width 0.3s ease',
             }}
         >
-            <Card
-                className={cn(
-                    "flex flex-col select-none cursor-pointer transition-all duration-300 overflow-hidden",
-                    focused ? "border-primary ring-2 ring-primary/20" : "border-border hover:border-primary/50",
-                    "rounded-lg shadow-sm bg-background",
-                    isPlanned ? "border-dashed border-primary/60 bg-primary/5 shadow-none" : "",
-                    isRemovalCandidate && "border-destructive bg-destructive/5 ring-2 ring-destructive/20"
-                )}
-                style={{ height: h }}
+
+            {/* ── Compact card (always visible) ─────────────────────────── */}
+            <div
+                className="rounded-xl flex items-center gap-3 px-3 select-none cursor-pointer group"
+                style={{
+                    pointerEvents: 'none', // Keep un-draggable
+                    height: h,
+                    background: isRemovalCandidate
+                        ? 'rgba(255, 59, 48, 0.05)'
+                        : isPlanned ? 'rgba(0,122,255,0.05)' : (isDark ? 'rgba(44,44,46,0.75)' : 'rgba(255,255,255,0.88)'),
+                    backdropFilter: 'blur(20px) saturate(1.8)',
+                    WebkitBackdropFilter: 'blur(20px) saturate(1.8)',
+                    border: isRemovalCandidate
+                        ? '1.5px solid #FF3B30'
+                        : isPlanned
+                            ? '2px dashed rgba(0,122,255,0.8)'
+                            : focused
+                                ? (isDark ? '1.5px solid rgba(255,255,255,0.3)' : '1.5px solid rgba(0,0,0,0.15)')
+                                : isExpanded
+                                    ? '1px solid rgba(0,122,255,0.3)'
+                                    : isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.07)',
+                    borderRadius: isExpanded ? '14px 14px 0 0' : 14,
+                    boxShadow: isRemovalCandidate
+                        ? '0 0 15px rgba(255,59,48,0.2)'
+                        : isPlanned
+                            ? 'none' // Handled by CSS animation
+                            : focused
+                                ? (isDark ? '0 4px 16px rgba(0,0,0,0.4)' : '0 4px 16px rgba(0,0,0,0.06)')
+                                : hovered
+                                    ? (isDark ? '0 4px 20px rgba(0,0,0,0.4), 0 1px 4px rgba(255,255,255,0.04)' : '0 4px 20px rgba(0,0,0,0.1), 0 1px 4px rgba(0,0,0,0.06)')
+                                    : (isDark ? '0 1px 3px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.03)'),
+                    transition: 'box-shadow 0.25s ease, border-color 0.2s ease, border-radius 0.2s ease',
+                }}
             >
-                <div className="flex flex-1 items-center gap-3 px-3 relative h-full">
-                    {/* Indicators */}
-                    <div className="absolute top-1 right-2 flex gap-1 pointer-events-none">
-                        {(node.attributes?.risk || 0) > 50 && (
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <div className="size-2 rounded-full bg-destructive shadow-[0_0_8px_rgba(239,68,68,0.5)]" />
-                                </TooltipTrigger>
-                                <TooltipContent className="text-[10px] font-bold py-1 px-2 uppercase tracking-widest bg-destructive text-destructive-foreground">High Risk</TooltipContent>
-                            </Tooltip>
-                        )}
-                        {(node.attributes?.monthly_cost || 0) > 50 && (
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <div className="size-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
-                                </TooltipTrigger>
-                                <TooltipContent className="text-[10px] font-bold py-1 px-2 uppercase tracking-widest bg-green-500 text-white">Cost Outlier</TooltipContent>
-                            </Tooltip>
+                {/* ── Node Analysis Badges ────────────────────────────────── */}
+                <div className="absolute top-[-5px] right-[10px] flex gap-1 pointer-events-none">
+                    {node.attributes?.risk > 50 && (
+                        <div className="w-1.5 h-1.5 rounded-full bg-[#FF3B30] glow-red" title="High Risk" />
+                    )}
+                    {node.attributes?.monthly_cost > 10 && (
+                        <div className="w-1.5 h-1.5 rounded-full bg-[#34C759] glow-green" title="High Cost" />
+                    )}
+                    {(node.metrics?.current_load || 0) > 0.7 && (
+                        <div className="w-1.5 h-1.5 rounded-full bg-[#007AFF] glow-blue" title="High Load" />
+                    )}
+                </div>
+
+                {/* Icon badge */}
+                <div
+                    className="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center text-lg"
+                    style={{ background: `${meta.color}10`, border: `1px solid ${meta.color}20` }}
+                >
+                    {meta.icon}
+                </div>
+
+                {/* Text */}
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                        <div className="text-[12px] font-semibold truncate leading-tight" style={{ color: isDark ? 'rgba(255,255,255,0.9)' : '#1d1d1f', letterSpacing: '-0.01em', textDecoration: isGhost ? 'line-through' : 'none' }}>
+                            {node.label}
+                        </div>
+                        {(isPlanned || isRemovalCandidate || isGhost) && (
+                            <span className="text-[8px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded-sm"
+                                style={{
+                                    background: isGhost ? (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)') : (isRemovalCandidate ? 'rgba(255,59,48,0.15)' : 'rgba(0,122,255,0.15)'),
+                                    color: isGhost ? (isDark ? '#aeaeb2' : '#86868b') : (isRemovalCandidate ? '#FF3B30' : '#007AFF')
+                                }}>
+                                {isGhost ? 'Removed' : isRemovalCandidate ? 'Pending Deletion' : 'Planned'}
+                            </span>
                         )}
                     </div>
-
-                    {/* Icon */}
-                    <div className={cn(
-                        "shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-xl border shadow-sm transition-transform duration-300",
-                        hovered && "scale-110",
-                        isPlanned ? "bg-primary/10 border-primary/20" : "bg-muted/50 border-border/50"
-                    )} style={{ borderColor: `${meta.color}40`, background: `${meta.color}10` }}>
-                        {meta.icon}
-                    </div>
-
-                    {/* Content */}
-                    <div className="flex-1 min-w-0 flex flex-col justify-center">
-                        <div className="flex items-center gap-2 mb-0.5">
-                            <span className={cn(
-                                "text-[13px] font-bold tracking-tight truncate leading-tight",
-                                isGhost && "line-through opacity-40"
-                            )}>
-                                {node.label}
-                            </span>
-                            {(isPlanned || isRemovalCandidate || isGhost) && (
-                                <Badge variant={isGhost ? "secondary" : isRemovalCandidate ? "destructive" : "default"} className="text-[8px] h-3.5 px-1 font-black uppercase leading-none tracking-tighter">
-                                    {isGhost ? 'RM' : isRemovalCandidate ? 'DEL' : 'PLAN'}
-                                </Badge>
-                            )}
-                        </div>
-                        <div className="flex items-center gap-1.5 overflow-hidden">
-                            <span className="text-[10px] font-bold uppercase tracking-tighter text-muted-foreground truncate opacity-70">
-                                {meta.label}
-                            </span>
-                            {!isPlanned && !isRemovalCandidate && !isGhost && (
-                                <>
-                                    <Separator orientation="vertical" className="h-2 opacity-50" />
-                                    <div className="flex items-center gap-1">
-                                        <Activity className={cn("size-2.5", lp.color)} />
-                                        <span className={cn("text-[10px] font-black tabular-nums", lp.color)}>
-                                            {((node.metrics?.current_load || 0) * 100).toFixed(0)}%
-                                        </span>
-                                    </div>
-                                </>
-                            )}
-                        </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[9px] font-medium" style={{ color: isDark ? '#aeaeb2' : '#86868b', textDecoration: isGhost ? 'line-through' : 'none' }}>{meta.label}</span>
+                        {!isPlanned && !isRemovalCandidate && !isGhost && (
+                            <>
+                                <span className="text-[9px]" style={{ color: isDark ? '#636366' : '#d1d1d6' }}>·</span>
+                                <span className="text-[10px] font-medium" style={{ color: lp.color }}>
+                                    {((node.metrics?.current_load || 0) * 100).toFixed(0)}%
+                                </span>
+                            </>
+                        )}
                     </div>
                 </div>
-            </Card>
+
+                {/* Pipeline count badge */}
+                {hasEvents && !isRemovalCandidate && (
+                    <div
+                        className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold"
+                        style={{
+                            background: isExpanded ? '#007AFF' : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'),
+                            color: isExpanded ? '#fff' : (isDark ? '#aeaeb2' : '#86868b'),
+                            transition: 'background 0.2s ease, color 0.2s ease',
+                        }}
+                    >
+                        {events.length}
+                    </div>
+                )}
+            </div>
+
+            {/* Hover action bar removed - sidebar now opens immediately on click */}
+
+            {/* ── Expanded pipeline panel (slides open below) ────────── */}
+            <AnimatePresence>
+                {isExpanded && (
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+                        style={{
+                            overflow: 'hidden',
+                            background: isDark ? 'rgba(44,44,46,0.95)' : 'rgba(255,255,255,0.92)',
+                            backdropFilter: 'blur(20px) saturate(1.8)',
+                            WebkitBackdropFilter: 'blur(20px) saturate(1.8)',
+                            borderLeft: '1px solid rgba(0,122,255,0.2)',
+                            borderRight: '1px solid rgba(0,122,255,0.2)',
+                            borderBottom: '1px solid rgba(0,122,255,0.2)',
+                            borderRadius: '0 0 14px 14px',
+                            boxShadow: isDark ? '0 8px 24px rgba(0,0,0,0.4)' : '0 8px 24px rgba(0,0,0,0.08)',
+                            pointerEvents: 'auto', // Panel MUST be clickable!
+                        }}
+                    >
+                        {/* Panel header */}
+                        <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5" style={{ borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'}` }}>
+                            <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: isDark ? '#aeaeb2' : '#86868b', letterSpacing: '0.06em' }}>
+                                CI/CD Pipeline
+                            </span>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onNodeClick && onNodeClick(null, e); }}
+                                className="text-[10px] cursor-pointer bg-transparent border-0 font-medium"
+                                style={{ color: isDark ? '#636366' : '#aeaeb2' }}
+                            >
+                                ✕ close
+                            </button>
+                        </div>
+
+                        <div className="px-3 py-2 flex flex-col gap-1.5" style={{ maxHeight: 200, overflowY: 'auto' }}>
+                            {events.length === 0 ? (
+                                <div className="text-[11px] py-3 text-center" style={{ color: isDark ? '#636366' : '#aeaeb2' }}>
+                                    No pipeline events recorded
+                                </div>
+                            ) : (
+                                [...events].reverse().map((event, i) => {
+                                    const ss = STATUS_STYLE[event.status] || STATUS_STYLE.success;
+                                    return (
+                                        <motion.div
+                                            key={i}
+                                            initial={{ opacity: 0, x: -8 }}
+                                            animate={{ opacity: 1, x: 0 }}
+                                            transition={{ duration: 0.15, delay: i * 0.04 }}
+                                            className="flex items-start gap-2 rounded-lg px-2.5 py-2"
+                                            style={{ background: ss.bg }}
+                                        >
+                                            {/* Status icon */}
+                                            <span
+                                                className="shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold mt-0.5"
+                                                style={{ color: ss.color, background: `${ss.color}15` }}
+                                            >
+                                                {ss.icon}
+                                            </span>
+
+                                            {/* Event content */}
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-[10px] font-semibold uppercase" style={{ color: ss.color, letterSpacing: '0.03em' }}>
+                                                        {event.status.replace('_', ' ')}
+                                                    </span>
+                                                    <span className="text-[9px]" style={{ color: isDark ? '#636366' : '#d1d1d6' }}>·</span>
+                                                    <span className="text-[9px]" style={{ color: isDark ? '#aeaeb2' : '#aeaeb2' }}>
+                                                        {formatTime(event.timestamp)}
+                                                    </span>
+                                                </div>
+                                                <p className="text-[10px] leading-relaxed m-0 mt-0.5" style={{ color: isDark ? '#e5e5ea' : '#1d1d1f' }}>
+                                                    {event.message}
+                                                </p>
+                                            </div>
+                                        </motion.div>
+                                    );
+                                })
+                            )}
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </motion.div>
     );
 }
 
+/* ── Hover action button ───────────────────────────────────────── */
 
+/* ActionButton component removed */
+
+/* ── Time formatter ────────────────────────────────────────────── */
+
+function formatTime(ts) {
+    try {
+        const d = new Date(ts);
+        return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+            + ' · '
+            + d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    } catch {
+        return ts;
+    }
+}

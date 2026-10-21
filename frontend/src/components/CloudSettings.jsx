@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAnalysis } from '../context/AnalysisContext';
 import {
   testConnection,
@@ -8,63 +9,13 @@ import {
   deleteConnection,
   bootstrapConnection,
 } from '../services/cloudApi';
-import { 
-  X, 
-  Cloud, 
-  Plus, 
-  Trash2, 
-  RefreshCw, 
-  AlertCircle, 
-  CheckCircle2, 
-  HelpCircle,
-  ExternalLink,
-  Lock,
-  Search,
-  Settings2,
-  Globe,
-  Database,
-  Cpu,
-  Layers,
-  Activity,
-  ChevronRight,
-  ShieldCheck,
-  Key
-} from "lucide-react";
-
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { 
-  Sheet, 
-  SheetContent, 
-  SheetHeader, 
-  SheetTitle, 
-  SheetDescription,
-  SheetFooter
-} from "@/components/ui/sheet";
-import { 
-  Card, 
-  CardContent, 
-  CardHeader, 
-  CardTitle, 
-  CardDescription,
-  CardFooter
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Progress } from "@/components/ui/progress";
-import { Separator } from "@/components/ui/separator";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Switch } from "@/components/ui/switch";
-import { cn } from "@/lib/utils";
 
 // ── Icons ───────────────────────────────────────────────────────────
 const Icons = {
   AWS: () => (
     <svg width="20" height="20" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M228.8 190.5c-15.6 15.6-43.7 27.5-70.2 27.5-35.3 0-66.2-21.2-66.2-21.2l-10 16.5s38.4 28.1 82.2 28.1c32.8 0 71.2-16.6 88.7-36.9 3.1-3.6-1.5-8.5-4.7-6l-19.8 12z" fill="#FF9900"/>
-      <path d="M125.7 186.2c-29.2 0-46.2-12.8-46.2-32.8 0-33.1 41.5-38.3 75.3-38.3v-4.1c0-10-4.1-18.7-22.1-18.7-13.8 0-27.9 5.2-36.9 11.4-2.8 1.9-5.1-.9-3.3-3.1 9.4-11.6 27.2-16.2 43.1-16.2 30.7 0 46.2 16.2 46.2 42.5v55.3c0 7.8 2.8 12.5 5.6 15.9 2.2 2.5-.3 6.6-3.8 5.6-8.1-2.2-19.4-6.9-19.4-15.9v-1.6l-.3-.3c-11.3 9.7-23.5 16.3-38.2 16.3zm31.9-46.5c-22.1 0-48.4 3.4-48.4 17.5 0 9.7 10 15.3 22.8 15.3 16.6 0 31.3-8.8 33.1-19.1v-13.7h-7.5z" fill="currentColor"/>
+      <path d="M125.7 186.2c-29.2 0-46.2-12.8-46.2-32.8 0-33.1 41.5-38.3 75.3-38.3v-4.1c0-10-4.1-18.7-22.1-18.7-13.8 0-27.9 5.2-36.9 11.4-2.8 1.9-5.1-.9-3.3-3.1 9.4-11.6 27.2-16.2 43.1-16.2 30.7 0 46.2 16.2 46.2 42.5v55.3c0 7.8 2.8 12.5 5.6 15.9 2.2 2.5-.3 6.6-3.8 5.6-8.1-2.2-19.4-6.9-19.4-15.9v-1.6l-.3-.3c-11.3 9.7-23.5 16.3-38.2 16.3zm31.9-46.5c-22.1 0-48.4 3.4-48.4 17.5 0 9.7 10 15.3 22.8 15.3 16.6 0 31.3-8.8 33.1-19.1v-13.7h-7.5z" fill="#000" style={{ fill: 'currentColor' }}/>
     </svg>
   ),
   Azure: () => (
@@ -106,61 +57,82 @@ function timeAgo(isoString) {
 }
 
 // ── Status Badge ────────────────────────────────────────────────────
-function StatusBadge({ status }) {
+function StatusBadge({ status, isDark }) {
   const map = {
-    connected: { variant: 'default', label: 'Connected', icon: <CheckCircle2 className="size-3" /> },
-    syncing:   { variant: 'secondary', label: 'Syncing…', icon: <RefreshCw className="size-3 animate-spin" /> },
-    warning:   { variant: 'outline', className: 'text-orange-500 border-orange-500/20 bg-orange-500/10', label: 'Warning', icon: <AlertCircle className="size-3" /> },
-    error:     { variant: 'destructive', label: 'Error', icon: <AlertCircle className="size-3" /> },
-    unknown:   { variant: 'outline', label: 'Unknown', icon: <HelpCircle className="size-3" /> },
+    connected: { bg: 'rgba(52,199,89,0.15)', color: '#34C759', label: 'Connected' },
+    syncing:   { bg: 'rgba(0,122,255,0.15)',  color: '#007AFF', label: 'Syncing…' },
+    warning:   { bg: 'rgba(255,149,0,0.15)',  color: '#FF9500', label: 'Warning' },
+    error:     { bg: 'rgba(255,59,48,0.15)',   color: '#FF3B30', label: 'Error' },
+    unknown:   { bg: 'rgba(174,174,178,0.15)', color: '#aeaeb2', label: 'Unknown' },
   };
   const s = map[status] || map.unknown;
-  
   return (
-    <Badge variant={s.variant} className={cn("text-[10px] font-bold gap-1.5 px-2 h-5", s.className)}>
-      {s.icon}
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      padding: '3px 10px', borderRadius: 999,
+      fontSize: 10, fontWeight: 600, letterSpacing: '0.04em',
+      background: s.bg, color: s.color,
+      fontFamily: 'Inter, -apple-system, sans-serif',
+    }}>
+      <span style={{
+        width: 6, height: 6, borderRadius: '50%', background: s.color,
+        animation: status === 'syncing' ? 'pulse 1.5s ease-in-out infinite' : 'none',
+      }} />
       {s.label}
-    </Badge>
+    </span>
   );
 }
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  CloudSettings — Main Component
+// ═══════════════════════════════════════════════════════════════════
 
 export default function CloudSettings({ isOpen, onClose, theme = 'light' }) {
   const isDark = theme === 'dark';
   const { activeAccounts, setActiveAccounts } = useAnalysis();
 
+  // ── State ──────────────────────────────────────────────────────
   const [connections, setConnections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [provider, setProvider] = useState('aws');
 
-  const [setupMode, setSetupMode] = useState('manual');
+  // Add form state
+  const [setupMode, setSetupMode] = useState('manual'); // Default to manual for multi-cloud parity
   const [alias, setAlias] = useState('');
   const [region, setRegion] = useState('us-east-1');
   
+  // AWS states
   const [accessKey, setAccessKey] = useState('');
   const [secretKey, setSecretKey] = useState('');
   
+  // AWS Auto mode states
   const [adminAccessKey, setAdminAccessKey] = useState('');
   const [adminSecretKey, setAdminSecretKey] = useState('');
   const [bootstrapping, setBootstrapping] = useState(false);
 
+  // Azure states
   const [tenantId, setTenantId] = useState('');
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
   const [subscriptionId, setSubscriptionId] = useState('');
 
+  // GCP states
   const [projectId, setProjectId] = useState('');
   const [saJson, setSaJson] = useState('');
 
-  const [testResult, setTestResult] = useState(null);
+  const [testResult, setTestResult] = useState(null);   // { valid, account_id, error }
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
 
+  // Sync/delete in-flight
   const [syncingIds, setSyncingIds] = useState(new Set());
   const [deletingIds, setDeletingIds] = useState(new Set());
   const [syncResults, setSyncResults] = useState({});
 
+  // ── Fetch connections ──────────────────────────────────────────
   const fetchConnections = useCallback(async () => {
     try {
       const data = await listConnections();
@@ -179,6 +151,7 @@ export default function CloudSettings({ isOpen, onClose, theme = 'light' }) {
     }
   }, [isOpen, fetchConnections]);
 
+  // ── Test Connection ────────────────────────────────────────────
   const handleTest = async () => {
     setTesting(true);
     setTestResult(null);
@@ -207,6 +180,7 @@ export default function CloudSettings({ isOpen, onClose, theme = 'light' }) {
     }
   };
 
+  // ── Save Connection (Manual) ───────────────────────────────────
   const handleSave = async () => {
     setSaving(true);
     setFormError('');
@@ -231,6 +205,7 @@ export default function CloudSettings({ isOpen, onClose, theme = 'light' }) {
     }
   };
 
+  // ── Bootstrap Connection (Auto - AWS Only) ──────────────────────
   const handleBootstrap = async () => {
     setBootstrapping(true);
     setFormError('');
@@ -261,6 +236,7 @@ export default function CloudSettings({ isOpen, onClose, theme = 'light' }) {
     setFormError('');
   };
 
+  // ── Sync ───────────────────────────────────────────────────────
   const handleSync = async (id) => {
     setSyncingIds(prev => new Set(prev).add(id));
     setSyncResults(prev => { const next = {...prev}; delete next[id]; return next; });
@@ -277,6 +253,7 @@ export default function CloudSettings({ isOpen, onClose, theme = 'light' }) {
     }
   };
 
+  // ── Delete ─────────────────────────────────────────────────────
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this connection and all its synced resources?')) return;
     setDeletingIds(prev => new Set(prev).add(id));
@@ -290,294 +267,431 @@ export default function CloudSettings({ isOpen, onClose, theme = 'light' }) {
     }
   };
 
+  // ── Keyboard Dismiss ───────────────────────────────────────────
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && isOpen) onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  // ── Theme tokens ───────────────────────────────────────────────
+  const panelBg    = isDark ? 'rgba(18,18,20,0.96)' : 'rgba(248,248,250,0.97)';
+  const borderClr  = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+  const cardBg     = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.7)';
+  const cardBorder = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+  const textPrim   = isDark ? 'rgba(255,255,255,0.9)' : '#1d1d1f';
+  const textSec    = isDark ? 'rgba(255,255,255,0.5)' : '#86868b';
+  const textDim    = isDark ? 'rgba(255,255,255,0.25)' : '#aeaeb2';
+  const inputBg    = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.03)';
+  const inputBdr   = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
+
   return (
-    <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent className="w-[420px] sm:max-w-[420px] p-0 flex flex-col gap-0 border-l bg-background/95 backdrop-blur-xl">
-        <SheetHeader className="p-6 pb-4 border-b">
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground opacity-70">Infrastructure Settings</span>
-            <SheetTitle className="text-xl font-bold tracking-tight bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text text-transparent">
-              Cloud Connections
-            </SheetTitle>
-            <SheetDescription className="text-xs">
-              Manage multi-account cloud infrastructure and collection status.
-            </SheetDescription>
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          {/* Backdrop for click-outside to close */}
+          <motion.div
+            key="cloud-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            transition={{ duration: 0.2 }}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 69,
+              background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.1)'
+            }}
+          />
+          
+          <motion.aside
+            key="cloud-sidebar"
+            initial={{ x: 420, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          exit={{ x: 420, opacity: 0 }}
+          transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+          className="fixed"
+          style={{
+            top: 0, right: 0, bottom: 0,
+            width: 420, zIndex: 70,
+            display: 'flex', flexDirection: 'column',
+            background: panelBg,
+            backdropFilter: 'blur(32px) saturate(1.6)',
+            WebkitBackdropFilter: 'blur(32px) saturate(1.6)',
+            borderLeft: `1px solid ${borderClr}`,
+            boxShadow: isDark
+              ? '-8px 0 40px rgba(0,0,0,0.5)'
+              : '-4px 0 30px rgba(0,0,0,0.08)',
+            fontFamily: 'Inter, -apple-system, sans-serif',
+            overflowY: 'auto',
+            overscrollBehavior: 'contain',
+          }}
+        >
+          {/* ── Header ──────────────────────────────────────────── */}
+          <div style={{
+            padding: '28px 24px 16px',
+            borderBottom: `1px solid ${borderClr}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            flexShrink: 0,
+          }}>
+            <div>
+              <div style={{
+                fontSize: 10, fontWeight: 700, letterSpacing: '0.1em',
+                textTransform: 'uppercase', color: textDim,
+              }}>
+                Settings
+              </div>
+              <h2 style={{
+                fontSize: 18, fontWeight: 700, color: textPrim,
+                letterSpacing: '-0.02em', margin: '4px 0 0',
+                background: 'linear-gradient(135deg, #f97316, #f59e0b)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+              }}>
+                Cloud Connections
+              </h2>
+            </div>
+            <button
+              onClick={onClose}
+              style={{
+                width: 30, height: 30, borderRadius: 10,
+                border: `1px solid ${cardBorder}`,
+                background: cardBg, color: textSec,
+                cursor: 'pointer', display: 'flex',
+                alignItems: 'center', justifyContent: 'center',
+                fontSize: 12, transition: 'all 0.15s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = cardBg; }}
+            >
+              ✕
+            </button>
           </div>
-        </SheetHeader>
 
-          <ScrollArea className="flex-1 min-h-0 px-6">
-            <div className="py-6 space-y-6">
-              {/* Add New Connection Trigger */}
-              {!showAddForm && (
-                <Button 
-                  variant="outline" 
-                  className="w-full flex items-center justify-center gap-2 h-12 border-dashed border-2 hover:border-primary/50 hover:bg-primary/5 transition-all text-sm font-bold"
-                  onClick={() => setShowAddForm(true)}
-                >
-                  <Plus className="size-4" />
-                  Add New Cloud Connection
-                </Button>
-              )}
+          {/* ── Content ─────────────────────────────────────────── */}
+          <div style={{ padding: '16px 24px 32px', flex: 1 }}>
 
-              {/* Add Connection Form */}
+            {/* Add New Connection Button */}
+            {!showAddForm && (
+              <button
+                onClick={() => setShowAddForm(true)}
+                style={{
+                  width: '100%', padding: '12px 16px',
+                  borderRadius: 12,
+                  border: `1.5px dashed ${isDark ? 'rgba(249,115,22,0.3)' : 'rgba(249,115,22,0.4)'}`,
+                  background: isDark ? 'rgba(249,115,22,0.06)' : 'rgba(249,115,22,0.04)',
+                  color: '#f97316',
+                  fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  marginBottom: 20,
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = isDark ? 'rgba(249,115,22,0.12)' : 'rgba(249,115,22,0.08)';
+                  e.currentTarget.style.borderColor = '#f97316';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = isDark ? 'rgba(249,115,22,0.06)' : 'rgba(249,115,22,0.04)';
+                  e.currentTarget.style.borderColor = isDark ? 'rgba(249,115,22,0.3)' : 'rgba(249,115,22,0.4)';
+                }}
+              >
+                <span style={{ fontSize: 16, lineHeight: 1 }}>+</span>
+                Add New Connection
+              </button>
+            )}
+
+            {/* ── Add Connection Form ───────────────────────────── */}
+            <AnimatePresence>
               {showAddForm && (
-                <Card className="border shadow-sm overflow-hidden animate-in fade-in slide-in-from-top-4">
-                  <CardHeader className="p-4 pb-2">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-sm font-bold">New Connection</CardTitle>
-                      <Button variant="ghost" size="icon-xs" onClick={resetForm}>
-                        <X className="size-3" />
-                      </Button>
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+                  style={{ overflow: 'hidden', marginBottom: 20 }}
+                >
+                  <div style={{
+                    padding: 16, borderRadius: 14,
+                    background: cardBg,
+                    border: `1px solid ${cardBorder}`,
+                  }}>
+                    <div style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      marginBottom: 14,
+                    }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: textPrim }}>New Connection</span>
+                      <button
+                        onClick={resetForm}
+                        style={{ background: 'none', border: 'none', color: textSec, cursor: 'pointer', fontSize: 10 }}
+                      >Cancel</button>
                     </div>
-                  </CardHeader>
-                  <CardContent className="p-4 space-y-4">
+
                     {/* Provider Selector */}
-                    <div className="space-y-2">
-                      <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Select Cloud Provider</Label>
-                      <div className="grid grid-cols-3 gap-2">
-                        {[
-                          { id: 'aws', label: 'AWS', icon: <Icons.AWS />, color: 'text-[#FF9900]' },
-                          { id: 'azure', label: 'Azure', icon: <Icons.Azure />, color: 'text-[#0078D4]' },
-                          { id: 'gcp', label: 'GCP', icon: <Icons.GCP />, color: 'text-[#4285F4]' }
-                        ].map(p => (
-                          <Button
-                            key={p.id}
-                            variant={provider === p.id ? "secondary" : "outline"}
-                            className={cn(
-                              "h-16 flex flex-col gap-1 items-center justify-center rounded-xl transition-all",
-                              provider === p.id ? "ring-2 ring-primary" : "opacity-60 grayscale hover:grayscale-0 hover:opacity-100"
-                            )}
-                            onClick={() => { setProvider(p.id); setTestResult(null); if(p.id !== 'aws') setSetupMode('manual'); }}
-                          >
-                            <div className={cn("size-6 scale-110", p.color)}>{p.icon}</div>
-                            <span className="text-[8px] font-black uppercase tracking-tighter">{p.label}</span>
-                          </Button>
-                        ))}
-                      </div>
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+                      {['aws', 'azure', 'gcp'].map(p => (
+                        <button
+                          key={p}
+                          onClick={() => { setProvider(p); setTestResult(null); if(p !== 'aws') setSetupMode('manual'); }}
+                          style={{
+                            flex: 1, padding: '8px 4px', borderRadius: 10,
+                            border: `1px solid ${provider === p ? (p === 'aws' ? '#FF9900' : p === 'azure' ? '#0078D4' : '#4285F4') : cardBorder}`,
+                            background: provider === p ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.03)') : 'transparent',
+                            color: provider === p ? textPrim : textDim,
+                            cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                            transition: 'all 0.15s'
+                          }}
+                        >
+                          <div style={{ opacity: provider === p ? 1 : 0.4 }}>
+                            {p === 'aws' && <Icons.AWS />}
+                            {p === 'azure' && <Icons.Azure />}
+                            {p === 'gcp' && <Icons.GCP />}
+                          </div>
+                          <span style={{ fontSize: 8, fontWeight: 700, textTransform: 'uppercase' }}>{p}</span>
+                        </button>
+                      ))}
                     </div>
 
                     {/* Mode Toggle (AWS ONLY) */}
                     {provider === 'aws' && (
-                      <div className="space-y-2">
-                        <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Setup Mode</Label>
-                        <Tabs value={setupMode} onValueChange={setSetupMode} className="w-full">
-                          <TabsList className="grid w-full grid-cols-2 h-9 p-1">
-                            <TabsTrigger value="auto" className="text-[10px] font-bold">Auto-Scaffold</TabsTrigger>
-                            <TabsTrigger value="manual" className="text-[10px] font-bold">Manual Setup</TabsTrigger>
-                          </TabsList>
-                        </Tabs>
-                      </div>
+                    <div style={{ 
+                      display: 'flex', background: inputBg, borderRadius: 10, 
+                      padding: 2, marginBottom: 16, border: `1px solid ${inputBdr}`
+                    }}>
+                      <button
+                        onClick={() => { setSetupMode('auto'); setTestResult(null); }}
+                        style={{
+                          flex: 1, padding: '6px 0', borderRadius: 8, fontSize: 10, fontWeight: 600,
+                          border: 'none', cursor: 'pointer',
+                          background: setupMode === 'auto' ? (isDark ? 'rgba(255,255,255,0.1)' : '#fff') : 'transparent',
+                          color: setupMode === 'auto' ? '#f97316' : textSec,
+                          boxShadow: setupMode === 'auto' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none',
+                          transition: 'all 0.2s',
+                        }}
+                      >
+                        Auto-Scaffold
+                      </button>
+                      <button
+                        onClick={() => { setSetupMode('manual'); setTestResult(null); }}
+                        style={{
+                          flex: 1, padding: '6px 0', borderRadius: 8, fontSize: 10, fontWeight: 600,
+                          border: 'none', cursor: 'pointer',
+                          background: setupMode === 'manual' ? (isDark ? 'rgba(255,255,255,0.1)' : '#fff') : 'transparent',
+                          color: setupMode === 'manual' ? '#f97316' : textSec,
+                          boxShadow: setupMode === 'manual' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none',
+                          transition: 'all 0.2s',
+                        }}
+                      >
+                        Manual Setup
+                      </button>
+                    </div>
                     )}
 
-                    {/* Connection Metadata */}
-                    <div className="space-y-3">
-                      <div className="space-y-1.5">
-                        <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Connection Alias</Label>
-                        <Input 
-                          value={alias} 
-                          onChange={e => setAlias(e.target.value)}
-                          placeholder={`e.g. Production ${provider.toUpperCase()}`}
-                          className="h-9 text-xs"
-                        />
-                      </div>
+                    {/* Alias */}
+                    <label style={labelStyle(textSec)}>Connection Alias</label>
+                    <input
+                      type="text" value={alias} onChange={e => setAlias(e.target.value)}
+                      placeholder={`e.g. My ${provider.toUpperCase()} Project`}
+                      style={inputStyle(inputBg, inputBdr, textPrim)}
+                    />
 
-                      {/* AWS Fields */}
-                      {provider === 'aws' && (
+                    {/* AWS SPECIFIC FIELDS */}
+                    {provider === 'aws' && (
+                    <>
+                      <label style={labelStyle(textSec)}>AWS Region</label>
+                      <select
+                        value={region} onChange={e => setRegion(e.target.value)}
+                        style={{ ...inputStyle(inputBg, inputBdr, textPrim), cursor: 'pointer', appearance: 'auto' }}
+                      >
+                        {AWS_REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
+                      </select>
+
+                      {setupMode === 'auto' ? (
                         <>
-                          <div className="space-y-1.5">
-                            <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Region</Label>
-                            <Select value={region} onValueChange={setRegion}>
-                              <SelectTrigger className="h-9 text-xs">
-                                <SelectValue placeholder="Select region" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {AWS_REGIONS.map(r => <SelectItem key={r} value={r} className="text-xs">{r}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
+                          <div style={{ marginTop: 12, padding: 10, borderRadius: 10, background: 'rgba(249,115,22,0.05)', border: '1px solid rgba(249,115,22,0.1)', marginBottom: 12 }}>
+                            <p style={{ margin: 0, fontSize: 10, color: textSec, lineHeight: 1.4 }}>
+                              Provide admin keys to automatically create a restricted <strong>infradian-scanner</strong> user with <strong>ReadOnlyAccess</strong>.
+                            </p>
                           </div>
-
-                          {setupMode === 'auto' ? (
-                            <div className="space-y-3 pt-2">
-                              <div className="p-3 rounded-lg bg-primary/5 border border-primary/10 flex gap-3 items-start">
-                                <ShieldCheck className="size-4 text-primary shrink-0 mt-0.5" />
-                                <p className="text-[10px] leading-relaxed text-muted-foreground">
-                                  Provide admin keys to automatically provision a restricted <strong>infradian-scanner</strong> user with ReadOnlyAccess.
-                                </p>
-                              </div>
-                              <div className="space-y-1.5">
-                                <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Admin Access Key</Label>
-                                <Input 
-                                  value={adminAccessKey} 
-                                  onChange={e => setAdminAccessKey(e.target.value)}
-                                  placeholder="AKIA..."
-                                  className="h-9 text-xs font-mono"
-                                />
-                              </div>
-                              <div className="space-y-1.5">
-                                <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Admin Secret Key</Label>
-                                <Input 
-                                  type="password"
-                                  value={adminSecretKey} 
-                                  onChange={e => setAdminSecretKey(e.target.value)}
-                                  placeholder="••••••••••••"
-                                  className="h-9 text-xs font-mono"
-                                />
-                              </div>
-                              <Button
-                                className="w-full font-bold uppercase tracking-widest text-[10px] h-9 shadow-lg shadow-primary/20"
-                                onClick={handleBootstrap}
-                                disabled={bootstrapping || !adminAccessKey || !adminSecretKey || !alias}
-                              >
-                                {bootstrapping ? (
-                                  <><RefreshCw className="size-3 mr-2 animate-spin" /> Provisioning...</>
-                                ) : (
-                                  <><Plus className="size-3 mr-2" /> Auto-Provision Scanner</>
-                                )}
-                              </Button>
-                            </div>
-                          ) : (
-                            <div className="space-y-3 pt-2">
-                              <div className="space-y-1.5">
-                                <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Access Key ID</Label>
-                                <Input 
-                                  value={accessKey} 
-                                  onChange={e => setAccessKey(e.target.value)}
-                                  placeholder="AKIA..."
-                                  className="h-9 text-xs font-mono"
-                                />
-                              </div>
-                              <div className="space-y-1.5">
-                                <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Secret Access Key</Label>
-                                <Input 
-                                  type="password"
-                                  value={secretKey} 
-                                  onChange={e => setSecretKey(e.target.value)}
-                                  placeholder="••••••••••••"
-                                  className="h-9 text-xs font-mono"
-                                />
-                              </div>
+                          <label style={labelStyle(textSec)}>Admin Access Key</label>
+                          <input
+                            type="text" value={adminAccessKey} onChange={e => setAdminAccessKey(e.target.value)}
+                            placeholder="AKIA..."
+                            style={{ ...inputStyle(inputBg, inputBdr, textPrim), fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
+                          />
+                          <label style={labelStyle(textSec)}>Admin Secret Key</label>
+                          <input
+                            type="password" value={adminSecretKey} onChange={e => setAdminSecretKey(e.target.value)}
+                            placeholder="Secret..."
+                            style={{ ...inputStyle(inputBg, inputBdr, textPrim), fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
+                          />
+                          
+                          {formError && (
+                            <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 10, fontSize: 11, background: 'rgba(255,59,48,0.12)', color: '#FF3B30', border: '1px solid rgba(255,59,48,0.2)' }}>
+                              {formError}
                             </div>
                           )}
+
+                          <button
+                            onClick={handleBootstrap}
+                            disabled={bootstrapping || !adminAccessKey || !adminSecretKey || !alias}
+                            style={{
+                              width: '100%', marginTop: 14, padding: '10px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                              fontSize: 12, fontWeight: 600, color: '#fff',
+                              background: (!adminAccessKey || !adminSecretKey || !alias) ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)') : 'linear-gradient(135deg, #f97316, #f59e0b)',
+                              opacity: (!adminAccessKey || !adminSecretKey || !alias) ? 0.5 : 1,
+                              transition: 'all 0.2s',
+                            }}
+                          >
+                            {bootstrapping ? '⟳ Provisioning...' : '🚀 Auto-Provision Scanner'}
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <label style={labelStyle(textSec)}>Access Key ID</label>
+                          <input
+                            type="text" value={accessKey} onChange={e => setAccessKey(e.target.value)}
+                            placeholder="AKIA..."
+                            style={{ ...inputStyle(inputBg, inputBdr, textPrim), fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
+                          />
+                          <label style={labelStyle(textSec)}>Secret Access Key</label>
+                          <input
+                            type="password" value={secretKey} onChange={e => setSecretKey(e.target.value)}
+                            placeholder="Secret..."
+                            style={{ ...inputStyle(inputBg, inputBdr, textPrim), fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
+                          />
                         </>
                       )}
+                    </>
+                    )}
 
-                      {/* Azure Fields */}
-                      {provider === 'azure' && (
-                        <div className="space-y-3 pt-2">
-                          <div className="space-y-1.5">
-                            <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Tenant ID</Label>
-                            <Input 
-                              value={tenantId} 
-                              onChange={e => setTenantId(e.target.value)}
-                              className="h-9 text-xs font-mono"
-                            />
-                          </div>
-                          <div className="space-y-1.5">
-                            <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Client ID</Label>
-                            <Input 
-                              value={clientId} 
-                              onChange={e => setClientId(e.target.value)}
-                              className="h-9 text-xs font-mono"
-                            />
-                          </div>
-                          <div className="space-y-1.5">
-                            <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Client Secret</Label>
-                            <Input 
-                              type="password"
-                              value={clientSecret} 
-                              onChange={e => setClientSecret(e.target.value)}
-                              className="h-9 text-xs font-mono"
-                            />
-                          </div>
-                        </div>
-                      )}
+                    {/* AZURE SPECIFIC FIELDS */}
+                    {provider === 'azure' && (
+                    <>
+                      <label style={labelStyle(textSec)}>Tenant ID</label>
+                      <input
+                        type="text" value={tenantId} onChange={e => setTenantId(e.target.value)}
+                        placeholder="xxxxxxxx-xxxx-..."
+                        style={{ ...inputStyle(inputBg, inputBdr, textPrim), fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
+                      />
+                      <label style={labelStyle(textSec)}>Client (App) ID</label>
+                      <input
+                        type="text" value={clientId} onChange={e => setClientId(e.target.value)}
+                        placeholder="xxxxxxxx-xxxx-..."
+                        style={{ ...inputStyle(inputBg, inputBdr, textPrim), fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
+                      />
+                      <label style={labelStyle(textSec)}>Client Secret</label>
+                      <input
+                        type="password" value={clientSecret} onChange={e => setClientSecret(e.target.value)}
+                        placeholder="Secret value..."
+                        style={{ ...inputStyle(inputBg, inputBdr, textPrim), fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
+                      />
+                      <label style={labelStyle(textSec)}>Subscription ID (Optional)</label>
+                      <input
+                        type="text" value={subscriptionId} onChange={e => setSubscriptionId(e.target.value)}
+                        placeholder="xxxxxxxx-xxxx-..."
+                        style={{ ...inputStyle(inputBg, inputBdr, textPrim), fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
+                      />
+                    </>
+                    )}
 
-                      {/* GCP Fields */}
-                      {provider === 'gcp' && (
-                        <div className="space-y-3 pt-2">
-                          <div className="space-y-1.5">
-                            <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Project ID</Label>
-                            <Input 
-                              value={projectId} 
-                              onChange={e => setProjectId(e.target.value)}
-                              className="h-9 text-xs font-mono"
-                            />
-                          </div>
-                          <div className="space-y-1.5">
-                            <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Service Account JSON</Label>
-                            <textarea
-                              className="w-full flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-xs font-mono shadow-sm transition-colors cursor-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                              value={saJson} 
-                              onChange={e => setSaJson(e.target.value)}
-                              placeholder='{ "type": "service_account", ... }'
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                  <CardFooter className="p-4 bg-muted/30 border-t flex flex-col gap-3">
+                    {/* GCP SPECIFIC FIELDS */}
+                    {provider === 'gcp' && (
+                    <>
+                      <label style={labelStyle(textSec)}>Project ID</label>
+                      <input
+                        type="text" value={projectId} onChange={e => setProjectId(e.target.value)}
+                        placeholder="my-gcp-project-123"
+                        style={{ ...inputStyle(inputBg, inputBdr, textPrim), fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
+                      />
+                      <label style={labelStyle(textSec)}>Service Account JSON</label>
+                      <textarea
+                        value={saJson} onChange={e => setSaJson(e.target.value)}
+                        placeholder='{ "type": "service_account", ... }'
+                        style={{ 
+                          ...inputStyle(inputBg, inputBdr, textPrim), 
+                          fontFamily: 'JetBrains Mono, monospace', 
+                          fontSize: 10, height: 100, resize: 'vertical' 
+                        }}
+                      />
+                    </>
+                    )}
+
+                    {/* COMMON FORM ACTIONS */}
                     {setupMode === 'manual' && (
-                      <>
-                        {testResult && (
-                          <div className={cn(
-                            "w-full p-2.5 rounded-lg border text-[10px] font-bold flex gap-2 items-center",
-                            testResult.valid ? "bg-green-500/10 border-green-500/20 text-green-500" : "bg-red-500/10 border-red-500/20 text-red-500"
-                          )}>
-                            {testResult.valid ? <CheckCircle2 className="size-3" /> : <AlertCircle className="size-3" />}
-                            {testResult.valid ? `Verified Connection: ${testResult.account_id}` : testResult.error || 'Invalid credentials'}
-                          </div>
-                        )}
-                        <div className="flex gap-2 w-full">
-                          <Button 
-                            variant="outline" 
-                            className="flex-1 text-[10px] font-bold h-9" 
-                            onClick={handleTest}
-                            disabled={testing}
-                          >
-                            {testing ? <RefreshCw className="size-3 mr-2 animate-spin" /> : <Activity className="size-3 mr-2" />}
-                            Test
-                          </Button>
-                          <Button 
-                            className="flex-1 text-[10px] font-bold h-9" 
-                            onClick={handleSave}
-                            disabled={saving || !testResult?.valid || !alias}
-                          >
-                            {saving ? <RefreshCw className="size-3 mr-2 animate-spin" /> : <Plus className="size-3 mr-2" />}
-                            Save
-                          </Button>
+                    <>
+                      {testResult && (
+                        <div style={{
+                          marginTop: 10, padding: '8px 12px', borderRadius: 10,
+                          fontSize: 11, fontWeight: 500,
+                          background: testResult.valid ? 'rgba(52,199,89,0.12)' : 'rgba(255,59,48,0.12)',
+                          color: testResult.valid ? '#34C759' : '#FF3B30',
+                          border: `1px solid ${testResult.valid ? 'rgba(52,199,89,0.2)' : 'rgba(255,59,48,0.2)'}`,
+                        }}>
+                          {testResult.valid ? `✓ Verified — ID: ${testResult.account_id}` : `✗ ${testResult.error || 'Invalid credentials'}`}
                         </div>
-                      </>
-                    )}
-                    {formError && (
-                      <div className="w-full p-2.5 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-[10px] font-bold flex gap-2 items-center">
-                        <AlertCircle className="size-3" />
-                        {formError}
+                      )}
+
+                      {formError && (
+                        <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 10, fontSize: 11, background: 'rgba(255,59,48,0.12)', color: '#FF3B30', border: '1px solid rgba(255,59,48,0.2)' }}>
+                          {formError}
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+                        <button
+                          onClick={handleTest}
+                          disabled={testing}
+                          style={{ ...actionBtnStyle(isDark), flex: 1 }}
+                        >
+                          {testing ? '⟳ Testing…' : '⚡ Test'}
+                        </button>
+                        <button
+                          onClick={handleSave}
+                          disabled={saving || !testResult?.valid || !alias}
+                          style={{
+                            flex: 1, padding: '8px 14px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                            fontSize: 11, fontWeight: 600, color: '#fff',
+                            background: (!testResult?.valid || !alias) ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)') : 'linear-gradient(135deg, #f97316, #f59e0b)',
+                            opacity: (!testResult?.valid || !alias) ? 0.5 : 1,
+                            transition: 'all 0.2s',
+                          }}
+                        >
+                          {saving ? 'Saving…' : 'Save Connection'}
+                        </button>
                       </div>
+                    </>
                     )}
-                  </CardFooter>
-                </Card>
+                  </div>
+
+                </motion.div>
               )}
+            </AnimatePresence>
 
             {/* ── Section Label ──────────────────────────────────── */}
-            <div className="flex items-center justify-between mb-4">
-              <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground opacity-70">
-                Connected Accounts ({connections.length})
-              </Label>
-              {loading && <RefreshCw className="size-3 animate-spin text-muted-foreground" />}
+            <div style={{
+              fontSize: 9, fontWeight: 700, letterSpacing: '0.1em',
+              textTransform: 'uppercase', color: textDim,
+              marginBottom: 10,
+            }}>
+              Connected Accounts ({connections.length})
             </div>
 
             {/* ── Connection List ────────────────────────────────── */}
-            {!loading && connections.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center space-y-4 opacity-50">
-                <Cloud className="size-12 stroke-[1]" />
-                <div className="space-y-1">
-                  <p className="text-sm font-bold">No connections yet</p>
-                  <p className="text-xs">Add your first cloud account to start analyzing.</p>
-                </div>
+            {loading ? (
+              <div style={{ textAlign: 'center', padding: 40, color: textSec, fontSize: 12 }}>
+                Loading connections…
+              </div>
+            ) : connections.length === 0 ? (
+              <div style={{
+                textAlign: 'center', padding: '40px 20px',
+                color: textDim, fontSize: 12,
+              }}>
+                <div style={{ fontSize: 32, marginBottom: 8, opacity: 0.4 }}>☁️</div>
+                No connections yet. Add your first cloud account above.
               </div>
             ) : (
-              <div className="space-y-3 pb-12">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {connections.map(conn => {
                   const isVisible = activeAccounts === null 
                     ? true 
@@ -587,6 +701,12 @@ export default function CloudSettings({ isOpen, onClose, theme = 'light' }) {
                     <ConnectionCard
                       key={conn.id}
                       conn={conn}
+                      isDark={isDark}
+                      cardBg={cardBg}
+                      cardBorder={cardBorder}
+                      textPrim={textPrim}
+                      textSec={textSec}
+                      textDim={textDim}
                       isSyncing={syncingIds.has(conn.id)}
                       isDeleting={deletingIds.has(conn.id)}
                       syncResult={syncResults[conn.id]}
@@ -594,8 +714,10 @@ export default function CloudSettings({ isOpen, onClose, theme = 'light' }) {
                       onToggleVisible={() => {
                         let next;
                         if (activeAccounts === null) {
+                          // If it was null, initialize with all accounts first
                           next = new Set(connections.map(c => String(c.account_id)));
                         } else {
+                          // Otherwise clone existing
                           next = new Set(activeAccounts);
                         }
                         
@@ -606,6 +728,7 @@ export default function CloudSettings({ isOpen, onClose, theme = 'light' }) {
                           next.add(accStr);
                         }
                         
+                        // If everything is turned back on, reset to null
                         if (next.size === connections.length) {
                            setActiveAccounts(null);
                         } else {
@@ -620,127 +743,192 @@ export default function CloudSettings({ isOpen, onClose, theme = 'light' }) {
               </div>
             )}
           </div>
-        </ScrollArea>
-
-        <SheetFooter className="p-4 border-t bg-muted/20">
-          <p className="text-[9px] text-center w-full font-bold uppercase tracking-widest text-muted-foreground opacity-50">
-            Infradian Cloud Engine v2.4
-          </p>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+        </motion.aside>
+      </>
+    )}
+  </AnimatePresence>
   );
 }
 
+
+// ═══════════════════════════════════════════════════════════════════
+//  ConnectionCard — Individual account row
+// ═══════════════════════════════════════════════════════════════════
+
 function ConnectionCard({
-  conn, isSyncing, isDeleting, syncResult, isVisible, onToggleVisible, onSync, onDelete,
+  conn, isDark, cardBg, cardBorder, textPrim, textSec, textDim,
+  isSyncing, isDeleting, syncResult, isVisible, onToggleVisible, onSync, onDelete,
 }) {
-  const providerColor = conn.provider === 'aws' ? 'border-[#FF9900]' : conn.provider === 'azure' ? 'border-[#0078D4]' : 'border-[#4285F4]';
-  const providerIcon = {
-    aws: <Icons.AWS />,
-    azure: <Icons.Azure />,
-    gcp: <Icons.GCP />
-  }[conn.provider];
+  const [hovered, setHovered] = useState(false);
+
+  const providerColor = conn.provider === 'aws' ? '#FF9900' : conn.provider === 'azure' ? '#0078D4' : '#4285F4';
 
   return (
-    <Card className={cn(
-      "overflow-hidden transition-all duration-200 border-l-4",
-      isVisible ? providerColor : "border-muted grayscale opacity-60",
-      "hover:shadow-md"
-    )}>
-      <CardHeader className="p-4 pb-2 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Switch 
-              checked={isVisible} 
-              onCheckedChange={onToggleVisible}
-              className="scale-75"
-            />
-            <div className="flex items-center gap-2">
-              <div className={cn("size-4", 
-                conn.provider === 'aws' ? "text-[#FF9900]" : 
-                conn.provider === 'azure' ? "text-[#0078D4]" : "text-[#4285F4]"
-              )}>
-                {providerIcon}
-              </div>
-              <span className={cn("text-sm font-bold truncate max-w-[180px]", !isVisible && "line-through opacity-50")}>
-                {conn.alias}
-              </span>
-            </div>
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onClick={onToggleVisible}
+      style={{
+        padding: '14px 16px', borderRadius: 14,
+        cursor: 'pointer',
+        background: isVisible
+          ? (hovered ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.95)') : (isDark ? 'rgba(255,255,255,0.04)' : cardBg))
+          : (hovered ? (isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.6)') : cardBg),
+        border: `1px solid ${isVisible ? providerColor + '60' : (hovered ? (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)') : cardBorder)}`,
+        borderLeft: `3px solid ${isVisible ? providerColor : (isDark ? '#333' : '#ddd')}`,
+        transition: 'all 0.15s',
+        opacity: isVisible ? 1 : 0.6,
+        boxShadow: isVisible ? `0 0 10px ${providerColor}15` : 'none',
+      }}
+    >
+      {/* Top row: alias + provider icon + badge */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <input
+            type="checkbox"
+            checked={isVisible}
+            onChange={() => {}} // React controlled wrapper
+            onClick={(e) => { e.stopPropagation(); onToggleVisible(); }}
+            style={{ 
+              cursor: 'pointer', margin: 0, transform: 'scale(1.2)', 
+              accentColor: providerColor 
+            }}
+          />
+          <div style={{ color: isVisible ? providerColor : (isDark ? '#555' : '#aaa'), transition: 'color 0.2s' }}>
+            {conn.provider === 'aws' && <Icons.AWS />}
+            {conn.provider === 'azure' && <Icons.Azure />}
+            {conn.provider === 'gcp' && <Icons.GCP />}
           </div>
-          <StatusBadge status={isSyncing ? 'syncing' : conn.status} />
+          <span style={{
+            fontSize: 13, fontWeight: 600, color: textPrim,
+            letterSpacing: '-0.01em',
+            textDecoration: isVisible ? 'none' : 'line-through',
+          }}>
+            {conn.alias}
+          </span>
         </div>
+        <StatusBadge status={isSyncing ? 'syncing' : conn.status} isDark={isDark} />
+      </div>
 
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[10px]">
-          <div className="flex items-center gap-1 text-muted-foreground">
-            <Lock className="size-2.5 opacity-50" />
-            <span className="font-bold opacity-60 uppercase">Account:</span>
-            <span className="font-mono truncate">{conn.account_id || '—'}</span>
-          </div>
-          {conn.region && (
-            <div className="flex items-center gap-1 text-muted-foreground">
-              <Globe className="size-2.5 opacity-50" />
-              <span className="font-bold opacity-60 uppercase">Region:</span>
-              <span className="truncate">{conn.region}</span>
-            </div>
-          )}
-          {conn.access_key_id_masked && (
-            <div className="col-span-2 flex items-center gap-1 text-muted-foreground">
-              <Key className="size-2.5 opacity-50" />
-              <span className="font-bold opacity-60 uppercase">Key:</span>
-              <code className="bg-muted px-1 rounded text-[9px] font-mono">{conn.access_key_id_masked}</code>
-            </div>
-          )}
-        </div>
-      </CardHeader>
+      {/* Meta row */}
+      <div style={{ display: 'flex', gap: 16, fontSize: 10, color: textSec, marginBottom: 10, flexWrap: 'wrap' }}>
+        <span title="Account ID">
+          <strong style={{ color: textDim, fontWeight: 600 }}>ID:</strong> {conn.account_id || '—'}
+        </span>
+        {conn.region && (
+        <span title="Region">
+          <strong style={{ color: textDim, fontWeight: 600 }}>Region:</strong> {conn.region}
+        </span>
+        )}
+        {conn.access_key_id_masked && (
+        <span title="Identifier">
+          <strong style={{ color: textDim, fontWeight: 600 }}>Key/Email:</strong>{' '}
+          <code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9 }}>{conn.access_key_id_masked}</code>
+        </span>
+        )}
+      </div>
 
-      <CardContent className="px-4 py-3 bg-muted/10 border-t flex items-center justify-between">
-        <div className="flex items-center gap-1 text-[9px] font-bold text-muted-foreground opacity-60 ">
-          <RefreshCw className="size-2.5" />
-          LAST SYNC: {timeAgo(conn.last_sync_at).toUpperCase()}
-        </div>
-        <div className="flex items-center gap-1.5">
-          <Button 
-            variant="ghost" 
-            size="icon-xs" 
-            className="h-7 w-7 text-primary hover:bg-primary/10" 
-            onClick={(e) => { e.stopPropagation(); onSync(); }}
+      {/* Bottom row: last sync + actions */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontSize: 10, color: textDim }}>
+          Synced: {timeAgo(conn.last_sync_at)}
+        </span>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button
+            onClick={onSync}
             disabled={isSyncing}
+            style={{
+              padding: '5px 12px', borderRadius: 8,
+              border: 'none', cursor: isSyncing ? 'wait' : 'pointer',
+              fontSize: 10, fontWeight: 600,
+              background: isDark ? 'rgba(0,122,255,0.15)' : 'rgba(0,122,255,0.1)',
+              color: '#007AFF',
+              transition: 'all 0.15s',
+              opacity: isSyncing ? 0.6 : 1,
+            }}
+            onMouseEnter={e => { if (!isSyncing) e.currentTarget.style.background = isDark ? 'rgba(0,122,255,0.25)' : 'rgba(0,122,255,0.18)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = isDark ? 'rgba(0,122,255,0.15)' : 'rgba(0,122,255,0.1)'; }}
           >
-            <RefreshCw className={cn("size-3.5", isSyncing && "animate-spin")} />
-          </Button>
-          <Button 
-            variant="ghost" 
-            size="icon-xs" 
-            className="h-7 w-7 text-destructive hover:bg-destructive/10" 
-            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            {isSyncing ? '⟳ Syncing…' : '↻ Sync Now'}
+          </button>
+          <button
+            onClick={onDelete}
             disabled={isDeleting}
+            style={{
+              padding: '5px 12px', borderRadius: 8,
+              border: 'none', cursor: isDeleting ? 'wait' : 'pointer',
+              fontSize: 10, fontWeight: 600,
+              background: isDark ? 'rgba(255,59,48,0.12)' : 'rgba(255,59,48,0.08)',
+              color: '#FF3B30',
+              transition: 'all 0.15s',
+              opacity: isDeleting ? 0.6 : 1,
+            }}
+            onMouseEnter={e => { if (!isDeleting) e.currentTarget.style.background = isDark ? 'rgba(255,59,48,0.22)' : 'rgba(255,59,48,0.15)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = isDark ? 'rgba(255,59,48,0.12)' : 'rgba(255,59,48,0.08)'; }}
           >
-            <Trash2 className="size-3.5" />
-          </Button>
+            {isDeleting ? 'Removing…' : 'Delete'}
+          </button>
         </div>
-      </CardContent>
+      </div>
 
       {syncResult && (
-        <CardFooter className="px-4 py-3 bg-background border-t">
-          <div className="w-full space-y-2">
-            <div className={cn(
-              "text-[10px] font-bold flex items-center gap-1.5",
-              syncResult.status === 'error' ? "text-destructive" : "text-green-500"
-            )}>
-              {syncResult.status === 'error' ? <AlertCircle className="size-3" /> : <CheckCircle2 className="size-3" />}
-              {syncResult.message}
-            </div>
-            {syncResult.collector_errors?.length > 0 && (
-              <ul className="text-[9px] text-destructive/80 space-y-1 list-disc pl-4">
-                {syncResult.collector_errors.map((err, i) => (
-                  <li key={i}>{err}</li>
-                ))}
-              </ul>
-            )}
+        <div style={{
+          marginTop: 12, padding: '10px 12px', borderRadius: 8,
+          fontSize: 10, background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.03)',
+          border: `1px solid ${cardBorder}`
+        }}>
+          <div style={{ 
+            color: syncResult.status === 'warning' ? '#FF9500' : 
+                   syncResult.status === 'error' ? '#FF3B30' : '#34C759',
+            fontWeight: 600, marginBottom: 4 
+          }}>
+            {syncResult.message}
           </div>
-        </CardFooter>
+          {syncResult.collector_errors && syncResult.collector_errors.length > 0 && (
+            <ul style={{ margin: 0, paddingLeft: 16, color: '#FF3B30', marginTop: 6, listStyleType: 'disc' }}>
+              {syncResult.collector_errors.map((err, i) => (
+                <li key={i} style={{ marginBottom: 2 }}>{err}</li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
-    </Card>
+    </div>
   );
+}
+
+
+// ── Shared inline style helpers ─────────────────────────────────────
+
+function labelStyle(color) {
+  return {
+    display: 'block', fontSize: 9, fontWeight: 700,
+    letterSpacing: '0.08em', textTransform: 'uppercase',
+    color, marginTop: 10, marginBottom: 4,
+    fontFamily: 'Inter, -apple-system, sans-serif',
+  };
+}
+
+function inputStyle(bg, border, color) {
+  return {
+    width: '100%', padding: '8px 12px',
+    borderRadius: 10,
+    border: `1px solid ${border}`,
+    background: bg, color,
+    fontSize: 12, outline: 'none',
+    fontFamily: 'Inter, -apple-system, sans-serif',
+    transition: 'border-color 0.15s',
+    boxSizing: 'border-box',
+  };
+}
+
+function actionBtnStyle(isDark) {
+  return {
+    padding: '8px 14px', borderRadius: 10,
+    border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
+    background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+    color: isDark ? 'rgba(255,255,255,0.8)' : '#1d1d1f',
+    cursor: 'pointer', fontSize: 11, fontWeight: 600,
+    transition: 'all 0.15s',
+  };
 }
