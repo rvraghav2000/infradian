@@ -67,7 +67,7 @@ flowchart LR
     studio["IaC Studio drawer"]
   end
   subgraph API["FastAPI (Python)"]
-    graph["Graph API"]
+    graphapi["Graph API"]
     engine["Analysis engine<br/>blast radius · safe-delete · simulation · readiness"]
     iac["IaC engine<br/>catalog · codegen · HCL parser · rules · cost"]
     collab["WebSocket collab + RBAC"]
@@ -75,7 +75,8 @@ flowchart LR
   neo[("Neo4j")]
   docker["Docker<br/>terraform · tofu · checkov"]
   git["Git remotes"]
-  cy <--> graph --> neo
+  cy <--> graphapi
+  graphapi --> neo
   cy --> engine
   studio <--> iac
   studio <--> collab
