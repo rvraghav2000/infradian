@@ -24,3 +24,15 @@ frontend/dist/
 *.tfstate.backup
 .terraform.lock.hcl.bak
 backend.hcl
+
+# IaC studio runtime data
+data/iac/
+data/comments/
+data/rbac.json
+
+# Local artifacts
+backend/backend.log
+backend/backend.pid
+*.egg-info/
+__pycache__/
+.claude/
